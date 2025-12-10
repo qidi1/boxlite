@@ -56,7 +56,8 @@ class ComputerBox(SimpleBox):
     _DEFAULT_DISPLAY_HEIGHT_PX = 768
 
     def __init__(self, cpu: int = 2, memory: int = 2048, monitor_http_port: int = 3000,
-                 monitor_https_port: int = 3001, runtime: Optional['Boxlite'] = None):
+                 monitor_https_port: int = 3001, runtime: Optional['Boxlite'] = None,
+                 **kwargs):
         """
         Create and auto-start a desktop environment.
 
@@ -65,28 +66,38 @@ class ComputerBox(SimpleBox):
             cpu: Number of CPU cores (default: 2)
             monitor_https_port: Port for web-based desktop monitor (default: 3001)
             runtime: Optional runtime instance (uses global default if None)
+            **kwargs: Additional configuration options (volumes, etc.)
         """
         self._monitor_port = monitor_https_port
 
-        # Initialize base box with environment variables and port mapping
-        # Set both Xvfb initial resolution AND Selkies resolution for consistency
+        # Merge user-provided env with default env
+        user_env = kwargs.pop('env', [])
+        default_env = [
+            ("DISPLAY", self._DISPLAY_NUMBER),
+            ("DISPLAY_SIZEW", str(self._DEFAULT_DISPLAY_WIDTH_PX)),
+            ("DISPLAY_SIZEH", str(self._DEFAULT_DISPLAY_HEIGHT_PX)),
+            ("SELKIES_MANUAL_WIDTH", str(self._DEFAULT_DISPLAY_WIDTH_PX)),
+            ("SELKIES_MANUAL_HEIGHT", str(self._DEFAULT_DISPLAY_HEIGHT_PX)),
+            ("SELKIES_UI_SHOW_SIDEBAR", "false"),
+        ]
+        merged_env = default_env + list(user_env)
+
+        # Merge user-provided ports with default ports
+        user_ports = kwargs.pop('ports', [])
+        default_ports = [
+            (monitor_http_port, self._GUEST_MONITOR_HTTP_PORT),
+            (monitor_https_port, self._GUEST_MONITOR_HTTPS_PORT)
+        ]
+        merged_ports = default_ports + list(user_ports)
+
         super().__init__(
             image=self._IMAGE_REFERENCE,
             memory_mib=memory,
             cpus=cpu,
             runtime=runtime,
-            env=[
-                ("DISPLAY", self._DISPLAY_NUMBER),
-                # X11 display resolution (works for initial X server size)
-                ("DISPLAY_SIZEW", str(self._DEFAULT_DISPLAY_WIDTH_PX)),
-                ("DISPLAY_SIZEH", str(self._DEFAULT_DISPLAY_HEIGHT_PX)),
-                # Selkies manual resolution (forces browser resolution)
-                ("SELKIES_MANUAL_WIDTH", str(self._DEFAULT_DISPLAY_WIDTH_PX)),
-                ("SELKIES_MANUAL_HEIGHT", str(self._DEFAULT_DISPLAY_HEIGHT_PX)),
-                ("SELKIES_UI_SHOW_SIDEBAR", "false"),  # Hide sidebar for cleaner UI
-            ],
-            ports=[(monitor_http_port, self._GUEST_MONITOR_HTTP_PORT),
-                   (monitor_https_port, self._GUEST_MONITOR_HTTPS_PORT)]
+            env=merged_env,
+            ports=merged_ports,
+            **kwargs
         )
 
     def endpoint(self) -> str:

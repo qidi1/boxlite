@@ -61,13 +61,15 @@ class BrowserBox(SimpleBox):
     _PORTS = {"chromium": 9222, "firefox": 9223, "webkit": 9224}
 
     def __init__(self, options: Optional[BrowserBoxOptions] = None,
-                 runtime: Optional['Boxlite'] = None):
+                 runtime: Optional['Boxlite'] = None,
+                 **kwargs):
         """
         Create and auto-start a browser.
 
         Args:
             options: Browser configuration (uses defaults if None)
             runtime: Optional runtime instance (uses global default if None)
+            **kwargs: Additional configuration options (volumes, env, etc.)
         """
         opts = options or BrowserBoxOptions()
 
@@ -80,6 +82,7 @@ class BrowserBox(SimpleBox):
             memory_mib=opts.memory,
             cpus=opts.cpu,
             runtime=runtime,
+            **kwargs
         )
 
     async def __aenter__(self):

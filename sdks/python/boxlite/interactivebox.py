@@ -82,8 +82,7 @@ class InteractiveBox:
             image=image,
             cpus=cpus,
             memory_mib=memory_mib,
-            working_dir=kwargs.get('working_dir'),
-            env=kwargs.get('env', [])
+            **kwargs
         )
 
         # Create box directly (no SimpleBox wrapper)

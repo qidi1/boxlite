@@ -81,8 +81,7 @@ class SimpleBox:
             image=image,
             cpus=cpus,
             memory_mib=memory_mib,
-            working_dir=kwargs.get('working_dir'),
-            env=kwargs.get('env', [])
+            **kwargs
         )
         self._box = self._runtime.create(box_opts)
 
