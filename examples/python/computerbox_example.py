@@ -29,7 +29,7 @@ async def test_all_functions():
     print("=== ComputerBox - Testing All Functions ===\n")
 
     async with boxlite.ComputerBox(cpu=2, memory=2048) as desktop:
-        print(f"✓ Desktop ready: {desktop.endpoint()}\n")
+        print("✓ Desktop started\n")
 
         # 1. wait_until_ready()
         print("1. wait_until_ready()")
@@ -113,7 +113,7 @@ async def example_workflow():
     print("\n\n=== Example Workflow ===\n")
 
     async with boxlite.ComputerBox(cpu=2, memory=2048) as desktop:
-        print(f"Desktop: {desktop.endpoint()}\n")
+        print("Desktop started\n")
 
         # Wait for desktop
         await desktop.wait_until_ready()

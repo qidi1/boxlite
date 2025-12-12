@@ -34,20 +34,20 @@ class ComputerBox(SimpleBox):
 
     Usage:
         >>> async with ComputerBox() as desktop:
-        ...     print(f"Desktop ready at: {desktop.endpoint()}")
-        ...     # Open the URL in your browser to see the desktop
-        ...     await asyncio.sleep(300)  # Keep running for 5 minutes
+        ...     await desktop.wait_until_ready()
+        ...     screenshot = await desktop.screenshot()
 
     Example with custom settings:
-        >>> async with ComputerBox(memory=4096, cpu=4, monitor_https_port=3002) as desktop:
-        ...     url = desktop.endpoint()
+        >>> async with ComputerBox(memory=4096, cpu=4) as desktop:
+        ...     await desktop.mouse_move(100, 200)
+        ...     await desktop.left_click()
     """
 
     # Always use xfce desktop
     _IMAGE_REFERENCE = "lscr.io/linuxserver/webtop:ubuntu-xfce"
     # Webtop uses port 3001 with HTTPS
-    _GUEST_MONITOR_HTTP_PORT = 3000
-    _GUEST_MONITOR_HTTPS_PORT = 3001
+    _GUEST_GUI_HTTP_PORT = 3000
+    _GUEST_GUI_HTTPS_PORT = 3001
     # Webtop display number
     _DISPLAY_NUMBER = ":1"
     # Expected display resolution when SELKIES_IS_MANUAL_RESOLUTION_MODE=true (Anthropic requires ≤ 1280x800)
@@ -55,8 +55,8 @@ class ComputerBox(SimpleBox):
     _DEFAULT_DISPLAY_WIDTH_PX = 1024
     _DEFAULT_DISPLAY_HEIGHT_PX = 768
 
-    def __init__(self, cpu: int = 2, memory: int = 2048, monitor_http_port: int = 3000,
-                 monitor_https_port: int = 3001, runtime: Optional['Boxlite'] = None,
+    def __init__(self, cpu: int = 2, memory: int = 2048, gui_http_port: int = 3000,
+                 gui_https_port: int = 3001, runtime: Optional['Boxlite'] = None,
                  **kwargs):
         """
         Create and auto-start a desktop environment.
@@ -64,12 +64,11 @@ class ComputerBox(SimpleBox):
         Args:
             memory: Memory in MiB (default: 2048)
             cpu: Number of CPU cores (default: 2)
-            monitor_https_port: Port for web-based desktop monitor (default: 3001)
+            gui_http_port: Port for web-based desktop GUI over HTTP (default: 3000)
+            gui_https_port: Port for web-based desktop GUI over HTTPS (default: 3001)
             runtime: Optional runtime instance (uses global default if None)
             **kwargs: Additional configuration options (volumes, etc.)
         """
-        self._monitor_port = monitor_https_port
-
         # Merge user-provided env with default env
         user_env = kwargs.pop('env', [])
         default_env = [
@@ -85,8 +84,8 @@ class ComputerBox(SimpleBox):
         # Merge user-provided ports with default ports
         user_ports = kwargs.pop('ports', [])
         default_ports = [
-            (monitor_http_port, self._GUEST_MONITOR_HTTP_PORT),
-            (monitor_https_port, self._GUEST_MONITOR_HTTPS_PORT)
+            (gui_http_port, self._GUEST_GUI_HTTP_PORT),
+            (gui_https_port, self._GUEST_GUI_HTTPS_PORT)
         ]
         merged_ports = default_ports + list(user_ports)
 
@@ -99,23 +98,6 @@ class ComputerBox(SimpleBox):
             ports=merged_ports,
             **kwargs
         )
-
-    def endpoint(self) -> str:
-        """
-        Get the web interface endpoint.
-
-        Returns:
-            HTTPS endpoint URL to access the desktop in your browser.
-            Note: Uses self-signed certificate - browser will show security warning.
-
-        Example:
-            >>> async with ComputerBox() as desktop:
-            ...     url = desktop.endpoint()
-            ...     print(f"Open this URL: {url}")
-            ...     # Navigate to the URL in your browser
-            ...     # Accept the self-signed certificate warning
-        """
-        return f"https://localhost:{self._monitor_port}"
 
     async def wait_until_ready(self, timeout: int = 60):
         """
