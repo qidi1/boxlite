@@ -1,58 +1,38 @@
 From a2eddd5cda847441f1d155c5aa4ab419a00f9fa6 Mon Sep 17 00:00:00 2001
 From: Sergio Lopez <slp@redhat.com>
 Date: Mon, 1 Dec 2025 18:10:43 +0100
-Subject: [PATCH] Makefile: add cross-compilation support
+Subject: [PATCH] Makefile: add cross-compilation support for macOS
 
 Developed-by: Jan Noha <nohajc@gmail.com>
 ---
- Makefile | 79 ++++++++++++++++++++++++++++++++++++++++++++++++++++----
- 1 file changed, 74 insertions(+), 5 deletions(-)
+ Makefile | 60 ++++++++++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 56 insertions(+), 4 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index cff066e..8cfc9c6 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -17,10 +17,19 @@ SNP_INIT_SRC =	init/tee/snp_attest.c		\
- 		$(KBS_INIT_SRC)			\
- 
- TDX_INIT_SRC = $(KBS_INIT_SRC)
-+NITRO_INIT_SRC = init/nitro/include/vsock.h		\
-+		init/nitro/include/archive.h		\
-+		init/nitro/include/fs.h			\
-+		init/nitro/main.c			\
-+		init/nitro/vsock.c			\
-+		init/nitro/archive.c			\
-+		init/nitro/fs.c				\
- 
- KBS_LD_FLAGS =	-lcurl -lidn2 -lssl -lcrypto -lzstd -lz -lbrotlidec-static \
- 		-lbrotlicommon-static
- 
-+NITRO_INIT_LD_FLAGS = -larchive -lnsm
-+
- BUILD_INIT = 1
- INIT_DEFS =
- ifeq ($(SEV),1)
-@@ -73,6 +82,9 @@ ifeq ($(TIMESYNC),1)
+@@ -68,6 +68,9 @@ ifeq ($(TIMESYNC),1)
  endif
- 
+
  OS = $(shell uname -s)
 +ARCH = $(shell uname -m)
 +DEBIAN_DIST ?= bookworm
 +ROOTFS_DIR = linux-sysroot
- 
+
  KRUN_BINARY_Linux = libkrun$(VARIANT).so.$(FULL_VERSION)
  KRUN_SONAME_Linux = libkrun$(VARIANT).so.$(ABI_VERSION)
-@@ -94,17 +106,69 @@ ifeq ($(PREFIX),)
+@@ -90,13 +93,32 @@ ifeq ($(PREFIX),)
      PREFIX := /usr/local
  endif
- 
--.PHONY: install clean test test-prefix $(LIBRARY_RELEASE_$(OS)) $(LIBRARY_DEBUG_$(OS)) libkrun.pc
-+.PHONY: install clean test test-prefix $(LIBRARY_RELEASE_$(OS)) $(LIBRARY_DEBUG_$(OS)) libkrun.pc clean-sysroot clean-all
- 
+
+-.PHONY: install clean test $(LIBRARY_RELEASE_$(OS)) $(LIBRARY_DEBUG_$(OS)) libkrun.pc
++.PHONY: install clean test $(LIBRARY_RELEASE_$(OS)) $(LIBRARY_DEBUG_$(OS)) libkrun.pc clean-sysroot clean-all
+
  all: $(LIBRARY_RELEASE_$(OS)) libkrun.pc
- 
+
  debug: $(LIBRARY_DEBUG_$(OS)) libkrun.pc
- 
+
 +ifeq ($(OS),Darwin)
 +# If SYSROOT_LINUX is not set and we're on macOS, generate sysroot automatically
 +ifeq ($(SYSROOT_LINUX),)
@@ -73,15 +53,10 @@ index cff066e..8cfc9c6 100644
  INIT_BINARY = init/init
 -$(INIT_BINARY): $(INIT_SRC)
 -	gcc -O2 -static -Wall $(INIT_DEFS) -o $@ $(INIT_SRC) $(INIT_DEFS)
--endif
 +$(INIT_BINARY): $(INIT_SRC) $(SYSROOT_TARGET)
 +	$(CC_LINUX) -O2 -static -Wall $(INIT_DEFS) -o $@ $(INIT_SRC) $(INIT_DEFS)
-+endif
-+
-+NITRO_INIT_BINARY= init/nitro/init
-+$(NITRO_INIT_BINARY): $(NITRO_INIT_SRC)
-+	$(CC) -O2 -static -Wall $(NITRO_INIT_LD_FLAGS) -o $@ $(NITRO_INIT_SRC) $(NITRO_INIT_LD_FLAGS)
-+
+ endif
+
 +# Sysroot preparation rules for cross-compilation on macOS
 +DEBIAN_PACKAGES = libc6 libc6-dev libgcc-12-dev linux-libc-dev
 +ROOTFS_TMP = $(ROOTFS_DIR)/.tmp
@@ -113,27 +88,26 @@ index cff066e..8cfc9c6 100644
 +clean-sysroot:
 +	rm -rf $(ROOTFS_DIR)
 +
- 
  $(LIBRARY_RELEASE_$(OS)): $(INIT_BINARY)
  	cargo build --release $(FEATURE_FLAGS)
-@@ -162,11 +226,16 @@ clean:
+@@ -154,5 +186,25 @@ clean:
  	rm -rf test-prefix
  	cd tests; cargo clean
- 
+
+-test: $(LIBRARY_RELEASE_$(OS))
+-	mkdir -p test-prefix
+-	PREFIX="$$(realpath test-prefix)" make install
+-	cd tests; LD_LIBRARY_PATH="$$(realpath ../test-prefix/lib64/)" PKG_CONFIG_PATH="$$(realpath ../test-prefix/lib64/pkgconfig/)" ./run.sh
 +clean-all: clean clean-sysroot
 +
- test-prefix/lib64/libkrun.pc: $(LIBRARY_RELEASE_$(OS))
- 	mkdir -p test-prefix
- 	PREFIX="$$(realpath test-prefix)" make install
- 
- test-prefix: test-prefix/lib64/libkrun.pc
- 
-+TEST ?= all
-+TEST_FLAGS ?=
++test-prefix/lib64/libkrun.pc: $(LIBRARY_RELEASE_$(OS))
++	mkdir -p test-prefix
++	PREFIX="$$(realpath test-prefix)" make install
 +
- test: test-prefix
--	cd tests; LD_LIBRARY_PATH="$$(realpath ../test-prefix/lib64/)" PKG_CONFIG_PATH="$$(realpath ../test-prefix/lib64/pkgconfig/)" ./run.sh
-+	cd tests; RUST_LOG=trace LD_LIBRARY_PATH="$$(realpath ../test-prefix/lib64/)" PKG_CONFIG_PATH="$$(realpath ../test-prefix/lib64/pkgconfig/)" ./run.sh test --test-case "$(TEST)" $(TEST_FLAGS)
--- 
++test-prefix: test-prefix/lib64/libkrun.pc
++
++test: test-prefix
++	cd tests; LD_LIBRARY_PATH="$$(realpath ../test-prefix/lib64/)" PKG_CONFIG_PATH="$$(realpath ../test-prefix/lib64/pkgconfig/)" ./run.sh
+--
 2.50.1
 
