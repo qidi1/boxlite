@@ -105,4 +105,22 @@ extern "C" {
 
     /// Set the gid before starting the microVM.
     pub fn krun_setgid(ctx_id: u32, gid: libc::gid_t) -> i32;
+
+    /// Configure a root filesystem backed by a block device with automatic remount.
+    ///
+    /// This allows booting from a disk image without needing to copy the init binary
+    /// into the disk. Libkrun creates a dummy virtiofs root, executes init from it,
+    /// and then switches to the disk-based root.
+    ///
+    /// Arguments:
+    /// - `ctx_id`: Configuration context ID
+    /// - `device`: Block device path (e.g., "/dev/vda", must be a previously configured block device)
+    /// - `fstype`: Filesystem type (e.g., "ext4", can be "auto" or NULL)
+    /// - `options`: Comma-separated mount options (can be NULL)
+    pub fn krun_set_root_disk_remount(
+        ctx_id: u32,
+        device: *const c_char,
+        fstype: *const c_char,
+        options: *const c_char,
+    ) -> i32;
 }

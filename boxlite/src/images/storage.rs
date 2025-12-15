@@ -462,15 +462,43 @@ impl ImageStorage {
         self.layout.layers_dir()
     }
 
-    /// Get path to disk image for an image digest.
+    /// Get path to disk image for an image digest with specific format.
     ///
-    /// Disk images are stored in `{images_dir}/disk-images/{digest}.qcow2`.
+    /// Disk images are stored in `{images_dir}/disk-images/{digest}.{ext}`.
     /// This returns the path regardless of whether the file exists.
-    pub fn disk_image_path(&self, image_digest: &str) -> PathBuf {
+    pub fn disk_image_path(
+        &self,
+        image_digest: &str,
+        format: crate::volumes::DiskFormat,
+    ) -> PathBuf {
         let filename = image_digest.replace(':', "-");
         self.layout
             .disk_images_dir()
-            .join(format!("{}.qcow2", filename))
+            .join(format!("{}.{}", filename, format.to_str()))
+    }
+
+    /// Find existing disk image for an image digest, checking all known formats.
+    ///
+    /// Returns the path and format if a cached disk image exists.
+    pub fn find_disk_image(
+        &self,
+        image_digest: &str,
+    ) -> Option<(PathBuf, crate::volumes::DiskFormat)> {
+        use crate::volumes::DiskFormat;
+
+        // Check for ext4 format first (most common for rootfs)
+        let ext4_path = self.disk_image_path(image_digest, DiskFormat::Ext4);
+        if ext4_path.exists() {
+            return Some((ext4_path, DiskFormat::Ext4));
+        }
+
+        // Check for qcow2 format
+        let qcow2_path = self.disk_image_path(image_digest, DiskFormat::Qcow2);
+        if qcow2_path.exists() {
+            return Some((qcow2_path, DiskFormat::Qcow2));
+        }
+
+        None
     }
 }
 

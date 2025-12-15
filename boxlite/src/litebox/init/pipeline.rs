@@ -276,6 +276,8 @@ impl InitPipeline {
             network_backend: config_output.network_backend,
             metrics,
             disk: config_output.disk,
+            rootfs_disk: config_output.rootfs_disk,
+            init_disk: config_output.init_disk,
             image_for_disk_install,
             container_id: guest_output.container_id,
         })

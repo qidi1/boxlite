@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "boxlite",
+    "boxlite/deps/e2fsprogs-sys",
     "boxlite/deps/libgvproxy-sys",
     "boxlite/deps/libkrun-sys",
     "boxlite-shared",

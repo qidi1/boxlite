@@ -1,0 +1,11 @@
+[package]
+name = "e2fsprogs-sys"
+version = "0.1.0"
+edition = "2021"
+authors = ["BoxLite Contributors"]
+description = "Builds and bundles mke2fs from e2fsprogs"
+license = "Apache-2.0"
+links = "e2fsprogs"
+
+[build-dependencies]
+num_cpus = "1.16"

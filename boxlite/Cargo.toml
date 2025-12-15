@@ -57,6 +57,7 @@ xattr = "1.0"
 walkdir = "2.5"
 filetime = "0.2"
 tempfile = "3.8"
+e2fsprogs-sys = { path = "deps/e2fsprogs-sys" }
 libgvproxy-sys = { path = "deps/libgvproxy-sys", optional = true }
 libkrun-sys = { path = "deps/libkrun-sys" }
 tokio-stream = "0.1.17"

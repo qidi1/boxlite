@@ -38,11 +38,6 @@ impl FilesystemLayout {
         self.images_dir().join(const_dirs::MANIFESTS_DIR)
     }
 
-    /// Root directory for all box rootfs mounts: ~/.boxlite/rootfs
-    pub fn rootfs_dir(&self) -> PathBuf {
-        self.home_dir.join(const_dirs::ROOTFS_DIR)
-    }
-
     /// Root directory for all box workspaces: ~/.boxlite/boxes
     /// Each box gets a subdirectory containing upper/work dirs for overlayfs
     pub fn boxes_dir(&self) -> PathBuf {
@@ -65,9 +60,6 @@ impl FilesystemLayout {
 
         std::fs::create_dir_all(self.image_manifests_dir())
             .map_err(|e| BoxliteError::Storage(format!("failed to create manifests dir: {e}")))?;
-
-        std::fs::create_dir_all(self.rootfs_dir())
-            .map_err(|e| BoxliteError::Storage(format!("failed to create rootfs dir: {e}")))?;
 
         Ok(())
     }

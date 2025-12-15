@@ -196,9 +196,8 @@ impl ImageStore {
     /// The returned Disk is persistent (won't be deleted on drop).
     pub async fn disk_image(&self, image_digest: &str) -> Option<crate::volumes::Disk> {
         let inner = self.inner.read().await;
-        let path = inner.storage.disk_image_path(image_digest);
-        if path.exists() {
-            Some(crate::volumes::Disk::new(path, true))
+        if let Some((path, format)) = inner.storage.find_disk_image(image_digest) {
+            Some(crate::volumes::Disk::new(path, format, true))
         } else {
             None
         }
@@ -208,6 +207,7 @@ impl ImageStore {
     ///
     /// Atomically moves the source disk to the image store path.
     /// The source disk is consumed and a new persistent Disk is returned.
+    /// The target path extension is determined by the disk's format.
     ///
     /// # Arguments
     /// * `image_digest` - Stable digest identifying the image
@@ -221,7 +221,8 @@ impl ImageStore {
         disk: crate::volumes::Disk,
     ) -> BoxliteResult<crate::volumes::Disk> {
         let inner = self.inner.read().await;
-        let target_path = inner.storage.disk_image_path(image_digest);
+        let disk_format = disk.format();
+        let target_path = inner.storage.disk_image_path(image_digest, disk_format);
 
         // Ensure parent directory exists
         if let Some(parent) = target_path.parent() {
@@ -239,7 +240,7 @@ impl ImageStore {
             tracing::debug!("Disk image already installed: {}", target_path.display());
             // Leak the source disk to prevent cleanup (it may have been the same file)
             let _ = disk.leak();
-            return Ok(crate::volumes::Disk::new(target_path, true));
+            return Ok(crate::volumes::Disk::new(target_path, disk_format, true));
         }
 
         let source_path = disk.path().to_path_buf();
@@ -263,7 +264,7 @@ impl ImageStore {
             target_path.display()
         );
 
-        Ok(crate::volumes::Disk::new(target_path, true))
+        Ok(crate::volumes::Disk::new(target_path, disk_format, true))
     }
 
     // ========================================================================

@@ -1,9 +1,9 @@
 //! Guest service interface.
 
 use boxlite_shared::{
-    BlockDeviceSource, BoxliteError, BoxliteResult, Filesystem, GuestClient, GuestInitRequest,
-    MergedRootfs, NetworkInit, OverlayRootfs, PingRequest, RootfsInit, ShutdownRequest,
-    VirtiofsSource, Volume, guest_init_response,
+    BlockDeviceSource, BoxliteError, BoxliteResult, DiskRootfs, Filesystem, GuestClient,
+    GuestInitRequest, MergedRootfs, NetworkInit, OverlayRootfs, PingRequest, RootfsInit,
+    ShutdownRequest, VirtiofsSource, Volume, guest_init_response,
 };
 use tonic::transport::Channel;
 
@@ -193,6 +193,14 @@ pub enum RootfsInitConfig {
         /// Set to false when using COW disks with pre-populated layers
         copy_layers: bool,
     },
+    /// Disk-based rootfs - block device mounted directly as container rootfs
+    /// Used when rootfs is baked into a disk image (ext4/qcow2) for faster boot
+    DiskImage {
+        /// Block device path (e.g., "/dev/vdb")
+        device: String,
+        /// Where to mount in guest (e.g., "/boxlite/workspace/rootfs")
+        mount_point: String,
+    },
 }
 
 impl RootfsInitConfig {
@@ -219,6 +227,15 @@ impl RootfsInitConfig {
                         copy_layers,
                     },
                 )),
+            },
+            RootfsInitConfig::DiskImage {
+                device,
+                mount_point,
+            } => RootfsInit {
+                strategy: Some(boxlite_shared::rootfs_init::Strategy::Disk(DiskRootfs {
+                    device,
+                    mount_point,
+                })),
             },
         }
     }

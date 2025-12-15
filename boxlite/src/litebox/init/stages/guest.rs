@@ -57,7 +57,7 @@ fn build_guest_init_config(
         false,
     )];
 
-    // Block device for writable layer
+    // Block device for writable layer (vda)
     let filesystem = if is_cow_child {
         Filesystem::Unspecified
     } else {
@@ -109,6 +109,20 @@ fn build_guest_init_config(
                 work_dir: format!("{}/work", guest_paths::DISK_MOUNT),
                 merged_dir: guest_paths::MERGED_DIR.to_string(),
                 copy_layers,
+            }
+        }
+        RootfsPrepResult::DiskImage { .. } => {
+            // Disk-based rootfs: mount the rootfs disk (vdb) directly
+            // The rootfs disk contains the complete container rootfs
+            volumes.push(GuestVolumeConfig::block_device(
+                guest_paths::ROOTFS_DISK_DEVICE,
+                guest_paths::ROOTFS_DISK_MOUNT,
+                Filesystem::Unspecified, // Already formatted, don't reformat
+            ));
+
+            RootfsInitConfig::DiskImage {
+                device: guest_paths::ROOTFS_DISK_DEVICE.to_string(),
+                mount_point: guest_paths::ROOTFS_DISK_MOUNT.to_string(),
             }
         }
     };

@@ -14,8 +14,9 @@ use libkrun_sys::{
     krun_add_disk2, krun_add_net_unixgram, krun_add_net_unixstream, krun_add_virtiofs,
     krun_add_vsock_port2, krun_create_ctx, krun_free_ctx, krun_init_log, krun_set_console_output,
     krun_set_env, krun_set_exec, krun_set_gpu_options, krun_set_kernel, krun_set_nested_virt,
-    krun_set_port_map, krun_set_rlimits, krun_set_root, krun_set_vm_config, krun_set_workdir,
-    krun_setgid, krun_setuid, krun_split_irqchip, krun_start_enter,
+    krun_set_port_map, krun_set_rlimits, krun_set_root, krun_set_root_disk_remount,
+    krun_set_vm_config, krun_set_workdir, krun_setgid, krun_setuid, krun_split_irqchip,
+    krun_start_enter,
 };
 
 /// Thin wrapper that owns a libkrun context.
@@ -100,6 +101,54 @@ impl KrunContext {
             .map_err(|e| BoxliteError::Engine(format!("invalid rootfs path: {e}")))?;
         check_status("krun_set_root", unsafe {
             krun_set_root(self.ctx_id, rootfs_c.as_ptr())
+        })
+    }
+
+    /// Configure root filesystem backed by a block device with automatic remount.
+    ///
+    /// This allows booting from a disk image. Libkrun creates a dummy virtiofs root,
+    /// executes init from it, and then automatically pivots to the disk-based root.
+    ///
+    /// # Arguments
+    /// * `device` - Block device path (e.g., "/dev/vda")
+    /// * `fstype` - Filesystem type (e.g., "ext4") or None for auto-detection
+    /// * `options` - Mount options or None for defaults
+    ///
+    /// # Note
+    /// The block device must be configured via `add_disk_with_format` before calling this.
+    pub unsafe fn set_root_disk_remount(
+        &self,
+        device: &str,
+        fstype: Option<&str>,
+        options: Option<&str>,
+    ) -> BoxliteResult<()> {
+        tracing::debug!(
+            "Setting root disk remount: device={}, fstype={:?}, options={:?}",
+            device,
+            fstype,
+            options
+        );
+
+        let device_c = CString::new(device)
+            .map_err(|e| BoxliteError::Engine(format!("invalid device path: {e}")))?;
+
+        let fstype_c = fstype
+            .map(|s| CString::new(s))
+            .transpose()
+            .map_err(|e| BoxliteError::Engine(format!("invalid fstype: {e}")))?;
+
+        let options_c = options
+            .map(|s| CString::new(s))
+            .transpose()
+            .map_err(|e| BoxliteError::Engine(format!("invalid options: {e}")))?;
+
+        check_status("krun_set_root_disk_remount", unsafe {
+            krun_set_root_disk_remount(
+                self.ctx_id,
+                device_c.as_ptr(),
+                fstype_c.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+                options_c.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+            )
         })
     }
 

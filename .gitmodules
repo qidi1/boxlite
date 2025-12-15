@@ -4,3 +4,6 @@
 [submodule "boxlite/deps/libkrun-sys/vendor/libkrunfw"]
 	path = boxlite/deps/libkrun-sys/vendor/libkrunfw
 	url = https://github.com/boxlite-labs/libkrunfw.git
+[submodule "boxlite/deps/e2fsprogs-sys/vendor/e2fsprogs"]
+	path = boxlite/deps/e2fsprogs-sys/vendor/e2fsprogs
+	url = https://github.com/tytso/e2fsprogs.git

@@ -39,11 +39,24 @@ pub mod guest_paths {
     /// OCI container bundle directory
     pub const BUNDLE_ROOT: &str = "/boxlite/workspace/rw/bundles";
 
-    /// Block device path in guest (virtio-blk)
+    /// Block device path in guest (virtio-blk) - data disk
     pub const DISK_DEVICE: &str = "/dev/vda";
 
     /// Mount point for writable disk in guest
     pub const DISK_MOUNT: &str = "/boxlite/workspace/disk";
+
+    /// Block device path for rootfs disk (virtio-blk) - second disk
+    pub const ROOTFS_DISK_DEVICE: &str = "/dev/vdb";
+
+    /// Mount point for rootfs disk in guest
+    pub const ROOTFS_DISK_MOUNT: &str = "/boxlite/workspace/rootfs";
+
+    /// Block device path for init rootfs disk (virtio-blk) - third disk
+    /// Used when init_rootfs uses disk-based strategy
+    pub const INIT_DISK_DEVICE: &str = "/dev/vdc";
+
+    /// Mount point for init rootfs disk before pivot_root
+    pub const INIT_DISK_MOUNT: &str = "/mnt/init";
 }
 
 pub mod envs {
@@ -75,9 +88,6 @@ pub mod dirs {
 
     /// Subdirectory for Unix domain sockets
     pub const SOCKETS_DIR: &str = "sockets";
-
-    /// Subdirectory for prepared rootfs (per box)
-    pub const ROOTFS_DIR: &str = "rootfs";
 
     /// Subdirectory for overlayfs upper layer (Linux only)
     pub const UPPER_DIR: &str = "upper";

@@ -107,6 +107,7 @@ message RootfsInit {
   oneof strategy {
     MergedRootfs merged = 1;
     OverlayRootfs overlay = 2;
+    DiskRootfs disk = 3;
   }
 }
 
@@ -122,6 +123,13 @@ message OverlayRootfs {
   string work_dir = 3;            // overlayfs work dir path
   string merged_dir = 4;          // final merged mount point
   bool copy_layers = 5;           // if true, copy lower_dirs to disk first (fixes UID mapping)
+}
+
+// Disk-based rootfs - block device mounted directly as container rootfs
+// Used when rootfs is baked into a disk image (ext4) for faster boot
+message DiskRootfs {
+  string device = 1;     // block device path (e.g., "/dev/vdb")
+  string mount_point = 2; // where to mount (e.g., "/boxlite/workspace/rootfs")
 }
 
 // Network initialization

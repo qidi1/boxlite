@@ -111,45 +111,80 @@ fn is_library_file(path: &Path) -> bool {
     false
 }
 
-/// Auto-discovers and bundles all FFI library dependencies from -sys crates.
+/// Auto-discovers and bundles all dependencies from -sys crates.
 ///
-/// Convention: Each -sys crate emits `cargo:{LIBNAME}_BOXLITE_DEP=<path>`
-/// which becomes `DEP_{LINKS}_{LIBNAME}_BOXLITE_DEP` env var.
+/// Convention: Each -sys crate emits `cargo:{NAME}_BOXLITE_DEP=<path>`
+/// which becomes `DEP_{LINKS}_{NAME}_BOXLITE_DEP` env var.
 ///
-/// Returns a list of bundled library names.
-fn bundle_boxlite_deps(runtime_dir: &Path) -> Vec<String> {
-    // Pattern: DEP_{LINKS}_{LIBNAME}_BOXLITE_DEP
-    // Example: DEP_KRUN_LIBKRUN_BOXLITE_DEP -> libkrun
-    let re = Regex::new(r"^DEP_[A-Z]+_([A-Z]+)_BOXLITE_DEP$").unwrap();
+/// The path can be either:
+/// - A directory: copies all library files (.dylib, .so, .dll) from it
+/// - A file: copies that single file
+///
+/// Returns a list of (name, bundled_path) pairs.
+fn bundle_boxlite_deps(runtime_dir: &Path) -> Vec<(String, PathBuf)> {
+    // Pattern: DEP_{LINKS}_{NAME}_BOXLITE_DEP
+    // Example: DEP_KRUN_LIBKRUN_BOXLITE_DEP -> libkrun (directory)
+    // Example: DEP_E2FSPROGS_MKE2FS_BOXLITE_DEP -> mke2fs (file)
+    let re = Regex::new(r"^DEP_[A-Z0-9]+_([A-Z0-9]+)_BOXLITE_DEP$").unwrap();
 
-    let mut collected_libs = Vec::new();
+    let mut collected = Vec::new();
 
-    for (key, lib_dir) in env::vars() {
+    for (key, source_path_str) in env::vars() {
         if let Some(caps) = re.captures(&key) {
-            let lib_name = caps[1].to_lowercase();
+            let name = caps[1].to_lowercase();
+            let source_path = Path::new(&source_path_str);
+
+            if !source_path.exists() {
+                panic!("Dependency path does not exist: {}", source_path_str);
+            }
 
             println!(
-                "cargo:warning=Found dependency: {} on {}",
-                lib_name, lib_dir
+                "cargo:warning=Found dependency: {} at {}",
+                name, source_path_str
             );
 
-            match copy_libs(Path::new(&lib_dir), runtime_dir) {
-                Ok(()) => {
-                    collected_libs.push(lib_name);
+            if source_path.is_dir() {
+                // Directory: copy library files
+                match copy_libs(source_path, runtime_dir) {
+                    Ok(()) => {
+                        collected.push((name, runtime_dir.to_path_buf()));
+                    }
+                    Err(e) => {
+                        panic!("Failed to copy {}: {}", name, e);
+                    }
                 }
-                Err(e) => {
-                    panic!("Failed to copy {}: {}", lib_name, e);
+            } else {
+                // File: copy single file
+                let file_name = source_path.file_name().expect("Failed to get filename");
+                let dest_path = runtime_dir.join(file_name);
+
+                if dest_path.exists() {
+                    fs::remove_file(&dest_path).unwrap_or_else(|e| {
+                        panic!("Failed to remove {}: {}", dest_path.display(), e)
+                    });
                 }
+
+                fs::copy(source_path, &dest_path).unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to copy {} -> {}: {}",
+                        source_path.display(),
+                        dest_path.display(),
+                        e
+                    )
+                });
+
+                println!("cargo:warning=Bundled: {}", file_name.to_string_lossy());
+                collected.push((name, dest_path));
             }
         }
     }
 
-    collected_libs
+    collected
 }
 
-/// Collects all FFI library dependencies into a single runtime directory.
+/// Collects all FFI dependencies into a single runtime directory.
 /// This directory can be used by downstream crates (e.g., Python SDK) to
-/// bundle all required libraries together.
+/// bundle all required libraries and binaries together.
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
@@ -169,15 +204,14 @@ fn main() {
     fs::create_dir_all(&runtime_dir)
         .unwrap_or_else(|e| panic!("Failed to create runtime directory: {}", e));
 
-    // Auto-discover and bundle all FFI library dependencies from -sys crates
-    let collected_libs = bundle_boxlite_deps(&runtime_dir);
+    // Auto-discover and bundle all dependencies from -sys crates
+    let collected = bundle_boxlite_deps(&runtime_dir);
+
     // Expose the runtime directory to downstream crates (e.g., Python SDK)
     println!("cargo:runtime_dir={}", runtime_dir.display());
-    if !collected_libs.is_empty() {
-        println!(
-            "cargo:warning=Bundled runtime libraries: {}",
-            collected_libs.join(", ")
-        );
+    if !collected.is_empty() {
+        let names: Vec<_> = collected.iter().map(|(name, _)| name.as_str()).collect();
+        println!("cargo:warning=Bundled: {}", names.join(", "));
     }
 
     // Set rpath for boxlite-shim

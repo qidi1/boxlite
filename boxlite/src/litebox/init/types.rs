@@ -22,6 +22,14 @@ use tokio::sync::OnceCell;
 /// - false: merged rootfs (all layers merged on host)
 pub const USE_OVERLAYFS: bool = true;
 
+/// Switch to disk-based rootfs strategy.
+/// - true: create ext4 disk from layers, use qcow2 COW overlay per box
+/// - false: use virtiofs + overlayfs (default)
+///
+/// Disk-based rootfs is faster to start but requires more disk space.
+/// When enabled, USE_OVERLAYFS is ignored.
+pub const USE_DISK_ROOTFS: bool = false;
+
 /// User-specified volume with resolved paths and generated tag.
 #[derive(Debug, Clone)]
 pub struct ResolvedVolume {
@@ -79,7 +87,7 @@ pub fn resolve_user_volumes(volumes: &[VolumeSpec]) -> BoxliteResult<Vec<Resolve
     Ok(resolved)
 }
 
-/// Result of rootfs preparation - either merged or separate layers.
+/// Result of rootfs preparation - either merged, separate layers, or disk image.
 #[derive(Debug)]
 pub enum RootfsPrepResult {
     /// Single merged directory (all layers merged on host)
@@ -92,6 +100,14 @@ pub enum RootfsPrepResult {
         /// Subdirectory names for each layer (e.g., "sha256-xxxx")
         layer_names: Vec<String>,
     },
+    /// Disk image containing the complete rootfs
+    /// The disk is attached as a block device and mounted directly
+    DiskImage {
+        /// Path to the base ext4 disk image (cached, shared across boxes)
+        base_disk_path: PathBuf,
+        /// Size of the disk in bytes (for creating COW overlay)
+        disk_size: u64,
+    },
 }
 
 /// Final initialized box state.
@@ -102,8 +118,18 @@ pub(crate) struct BoxInner {
     pub(in crate::litebox) network_backend: Option<Box<dyn NetworkBackend>>,
     /// Per-box operational metrics (stored internally, like Tokio's TaskMetrics)
     pub(in crate::litebox) metrics: BoxMetricsStorage,
-    /// RAII-managed disk (auto-cleanup on drop unless installed as disk image)
+    /// RAII-managed data disk (auto-cleanup on drop)
     pub(in crate::litebox) disk: Disk,
+    /// RAII-managed rootfs disk for disk-based rootfs mode (auto-cleanup on drop)
+    /// None when using overlayfs mode
+    /// Note: This field is not read directly, but kept for RAII disk cleanup.
+    #[allow(dead_code)]
+    pub(in crate::litebox) rootfs_disk: Option<Disk>,
+    /// RAII-managed rootfs disk for disk-based rootfs mode (auto-cleanup on drop)
+    /// None when using overlayfs mode
+    /// Note: This field is not read directly, but kept for RAII disk cleanup.
+    #[allow(dead_code)]
+    pub(in crate::litebox) init_disk: Option<Disk>,
     /// Image object for disk image installation on shutdown
     /// None if this was a COW child (disk image already exists)
     pub(in crate::litebox) image_for_disk_install: Option<ImageObject>,
@@ -164,9 +190,15 @@ pub struct ConfigInput<'a> {
 pub struct ConfigOutput {
     pub box_config: crate::vmm::InstanceSpec,
     pub network_backend: Option<Box<dyn NetworkBackend>>,
+    /// Data disk (for writable upper layer in overlayfs mode)
     pub disk: Disk,
     pub is_cow_child: bool,
     pub user_volumes: Vec<ResolvedVolume>,
+    /// Rootfs disk (for disk-based rootfs mode)
+    /// None when using overlayfs mode
+    pub rootfs_disk: Option<Disk>,
+    /// Init rootfs COW disk (protects shared base from writes)
+    pub init_disk: Option<Disk>,
 }
 
 /// Input for spawn stage.

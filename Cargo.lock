@@ -246,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "boxlite"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -256,6 +256,7 @@ dependencies = [
  "chrono",
  "clap",
  "dirs",
+ "e2fsprogs-sys",
  "filetime",
  "flate2",
  "futures",
@@ -294,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "boxlite-c"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "boxlite",
  "boxlite-shared",
@@ -306,7 +307,7 @@ dependencies = [
 
 [[package]]
 name = "boxlite-guest"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -333,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "boxlite-python"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "boxlite",
  "futures",
@@ -345,7 +346,7 @@ dependencies = [
 
 [[package]]
 name = "boxlite-shared"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "prost",
  "serde",
@@ -697,6 +698,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "e2fsprogs-sys"
+version = "0.1.0"
+dependencies = [
+ "num_cpus",
 ]
 
 [[package]]

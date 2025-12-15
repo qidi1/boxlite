@@ -320,19 +320,6 @@ impl Vmm for Krun {
                 }
             }
 
-            // Set the root filesystem for the VM kernel to boot from
-            // This must be set before adding virtiofs mounts
-            // Permissions are fixed in boostrap::ensure_rootfs_from_image
-            let rootfs_str = config.init_rootfs.path.to_str().ok_or_else(|| {
-                BoxliteError::Engine(format!(
-                    "Invalid rootfs path: {}",
-                    config.init_rootfs.path.display()
-                ))
-            })?;
-
-            tracing::debug!("Setting VM root filesystem: {}", rootfs_str);
-            ctx.set_rootfs(rootfs_str)?;
-
             // Configure rlimits that will be set in the guest
             // Format: "RLIMIT_NAME=soft:hard" where soft and hard are limits
             // These limits ensure the guest has adequate resources for container workloads
@@ -390,6 +377,27 @@ impl Vmm for Krun {
                         disk.format.as_str(),
                     )?;
                 }
+            }
+
+            // Configure root filesystem based on init rootfs strategy
+            if let crate::runtime::initrf::Strategy::Disk {
+                device_path: Some(device_path),
+                ..
+            } = &config.init_rootfs.strategy
+            {
+                // Disk-based boot: use set_root_disk_remount
+                tracing::info!("Configuring init disk remount: {}", device_path);
+                ctx.set_root_disk_remount(device_path, Some("ext4"), None)?;
+            } else {
+                // Virtiofs-based boot: use set_rootfs
+                let rootfs_str = config.init_rootfs.path.to_str().ok_or_else(|| {
+                    BoxliteError::Engine(format!(
+                        "Invalid rootfs path: {}",
+                        config.init_rootfs.path.display()
+                    ))
+                })?;
+                tracing::debug!("Setting VM root filesystem (virtiofs): {}", rootfs_str);
+                ctx.set_rootfs(rootfs_str)?;
             }
 
             tracing::debug!("Setting working directory to /");

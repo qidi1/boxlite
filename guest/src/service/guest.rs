@@ -103,6 +103,15 @@ impl GuestService for GuestServer {
 
                     overlay.merged_dir
                 }
+                Some(rootfs_init::Strategy::Disk(disk_rootfs)) => {
+                    // Disk-based rootfs: block device already mounted via volumes
+                    // The mount_point contains the complete container rootfs
+                    info!(
+                        "Using disk-based rootfs: {} mounted at {}",
+                        disk_rootfs.device, disk_rootfs.mount_point
+                    );
+                    disk_rootfs.mount_point
+                }
                 None => {
                     error!("Missing rootfs strategy in init request");
                     return Ok(Response::new(GuestInitResponse {

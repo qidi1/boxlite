@@ -80,9 +80,10 @@ pub(crate) async fn shutdown(litebox: &LiteBox) -> BoxliteResult<bool> {
         if let Some(ref image) = inner.image_for_disk_install {
             // Take ownership of the disk path before it gets cleaned up
             let disk_path = inner.disk.path().to_path_buf();
+            let disk_format = inner.disk.format();
             if disk_path.exists() {
                 // Create a new Disk from the path (non-persistent, will be moved)
-                let disk_to_install = crate::volumes::Disk::new(disk_path, false);
+                let disk_to_install = crate::volumes::Disk::new(disk_path, disk_format, false);
                 match image.install_disk_image(disk_to_install).await {
                     Ok(installed_disk) => {
                         tracing::info!(

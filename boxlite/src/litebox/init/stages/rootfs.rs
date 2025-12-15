@@ -1,9 +1,14 @@
 //! Stage 2: Rootfs preparation.
 //!
-//! Pulls container image and prepares rootfs (merged or overlayfs layers).
+//! Pulls container image and prepares rootfs:
+//! - Disk-based: Creates ext4 disk image from merged layers (fast boot)
+//! - Overlayfs: Extracts layers for guest-side overlayfs (flexible)
 
 use crate::images::ContainerConfig;
-use crate::litebox::init::types::{RootfsInput, RootfsOutput, RootfsPrepResult, USE_OVERLAYFS};
+use crate::litebox::init::types::{
+    RootfsInput, RootfsOutput, RootfsPrepResult, USE_DISK_ROOTFS, USE_OVERLAYFS,
+};
+use crate::volumes::create_ext4_from_dir;
 use boxlite_shared::errors::{BoxliteError, BoxliteResult};
 
 /// Pull image and prepare rootfs.
@@ -22,15 +27,15 @@ pub async fn run(input: RootfsInput<'_>) -> BoxliteResult<RootfsOutput> {
     // Pull image
     let image = pull_image(input.runtime, image_ref).await?;
 
-    // Prepare rootfs
-    let rootfs_result = if USE_OVERLAYFS {
+    // Prepare rootfs based on strategy
+    let rootfs_result = if USE_DISK_ROOTFS {
+        prepare_disk_rootfs(&image).await?
+    } else if USE_OVERLAYFS {
         prepare_overlayfs_layers(&image).await?
     } else {
-        // For merged rootfs, we need the layout - but we run in parallel with filesystem stage.
-        // The merged rootfs path will be created in config stage where we have layout.
-        // For now, overlayfs is the default and recommended approach.
         return Err(BoxliteError::Storage(
-            "Merged rootfs not supported in parallel pipeline. Use overlayfs (default).".into(),
+            "Merged rootfs not supported in parallel pipeline. Use overlayfs or disk rootfs."
+                .into(),
         ));
     };
 
@@ -95,5 +100,100 @@ async fn prepare_overlayfs_layers(
     Ok(RootfsPrepResult::Layers {
         layers_dir,
         layer_names,
+    })
+}
+
+/// Prepare disk-based rootfs from image layers.
+///
+/// This function:
+/// 1. Checks if a cached base disk image exists for this image
+/// 2. If not, merges layers and creates an ext4 disk image
+/// 3. Returns the path to the base disk for COW overlay creation
+async fn prepare_disk_rootfs(
+    image: &crate::images::ImageObject,
+) -> BoxliteResult<RootfsPrepResult> {
+    // Check if we already have a cached disk image for this image
+    if let Some(disk) = image.disk_image().await {
+        let disk_path = disk.path().to_path_buf();
+        let disk_size = std::fs::metadata(&disk_path)
+            .map(|m| m.len())
+            .unwrap_or(64 * 1024 * 1024);
+
+        tracing::info!(
+            "Using cached disk image: {} ({}MB)",
+            disk_path.display(),
+            disk_size / (1024 * 1024)
+        );
+
+        // Leak the disk to prevent cleanup (it's a cached persistent disk)
+        let _ = disk.leak();
+
+        return Ok(RootfsPrepResult::DiskImage {
+            base_disk_path: disk_path,
+            disk_size,
+        });
+    }
+
+    // No cached disk - we need to create one from layers
+    tracing::info!("Creating disk image from layers (first run for this image)");
+
+    // Step 1: Extract and merge layers using RootfsBuilder
+    let layer_paths = image.layer_extracted().await?;
+
+    if layer_paths.is_empty() {
+        return Err(BoxliteError::Storage(
+            "No layers found for disk rootfs".into(),
+        ));
+    }
+
+    // Create a temporary directory for merged rootfs
+    let temp_dir = tempfile::tempdir()
+        .map_err(|e| BoxliteError::Storage(format!("Failed to create temp directory: {}", e)))?;
+    let merged_path = temp_dir.path().join("merged");
+
+    // Use RootfsBuilder to merge layers
+    let builder = crate::rootfs::RootfsBuilder::new();
+    let _prepared = builder.prepare(merged_path.clone(), image).await?;
+
+    tracing::info!(
+        "Merged {} layers into temporary directory",
+        layer_paths.len()
+    );
+
+    // Step 2: Create ext4 disk image from merged rootfs
+    let temp_disk_path = temp_dir.path().join("rootfs.ext4");
+
+    // Use blocking spawn for sync disk creation
+    let merged_clone = merged_path.clone();
+    let disk_path_clone = temp_disk_path.clone();
+    let temp_disk =
+        tokio::task::spawn_blocking(move || create_ext4_from_dir(&merged_clone, &disk_path_clone))
+            .await
+            .map_err(|e| BoxliteError::Internal(format!("Disk creation task failed: {}", e)))??;
+
+    let disk_size = std::fs::metadata(temp_disk.path())
+        .map(|m| m.len())
+        .unwrap_or(64 * 1024 * 1024);
+
+    tracing::info!(
+        "Created ext4 disk image: {} ({}MB)",
+        temp_disk.path().display(),
+        disk_size / (1024 * 1024)
+    );
+
+    // Step 3: Install disk image to cache
+    let installed_disk = image.install_disk_image(temp_disk).await?;
+    let final_path = installed_disk.path().to_path_buf();
+
+    // Leak the disk to prevent cleanup
+    let _ = installed_disk.leak();
+
+    tracing::info!("Installed disk image to cache: {}", final_path.display());
+
+    // Cleanup: temp_dir is dropped automatically
+
+    Ok(RootfsPrepResult::DiskImage {
+        base_disk_path: final_path,
+        disk_size,
     })
 }
