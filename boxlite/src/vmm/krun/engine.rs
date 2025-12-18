@@ -378,24 +378,24 @@ impl Vmm for Krun {
                 }
             }
 
-            // Configure root filesystem based on init rootfs strategy
-            if let crate::runtime::initrf::Strategy::Disk {
+            // Configure root filesystem based on guest rootfs strategy
+            if let crate::runtime::guest_rootfs::Strategy::Disk {
                 device_path: Some(device_path),
                 ..
-            } = &config.init_rootfs.strategy
+            } = &config.guest_rootfs.strategy
             {
                 // Disk-based boot: use set_root_disk_remount
-                tracing::info!("Configuring init disk remount: {}", device_path);
+                tracing::info!("Configuring guest rootfs disk remount: {}", device_path);
                 ctx.set_root_disk_remount(device_path, Some("ext4"), None)?;
             } else {
                 // Virtiofs-based boot: use set_rootfs
-                let rootfs_str = config.init_rootfs.path.to_str().ok_or_else(|| {
+                let rootfs_str = config.guest_rootfs.path.to_str().ok_or_else(|| {
                     BoxliteError::Engine(format!(
                         "Invalid rootfs path: {}",
-                        config.init_rootfs.path.display()
+                        config.guest_rootfs.path.display()
                     ))
                 })?;
-                tracing::debug!("Setting VM root filesystem (virtiofs): {}", rootfs_str);
+                tracing::debug!("Setting box root filesystem (virtiofs): {}", rootfs_str);
                 ctx.set_rootfs(rootfs_str)?;
             }
 

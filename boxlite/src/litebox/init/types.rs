@@ -9,7 +9,7 @@ use crate::metrics::BoxMetricsStorage;
 use crate::net::NetworkBackend;
 use crate::portal::GuestSession;
 use crate::runtime::RuntimeInner;
-use crate::runtime::initrf::InitRootfs;
+use crate::runtime::guest_rootfs::GuestRootfs;
 use crate::runtime::layout::BoxFilesystemLayout;
 use crate::runtime::options::{BoxOptions, VolumeSpec};
 use crate::runtime::types::ContainerId;
@@ -170,15 +170,15 @@ pub struct RootfsOutput {
     pub image: ImageObject,
 }
 
-/// Input for init image stage.
-pub struct InitImageInput<'a> {
+/// Input for guest rootfs stage.
+pub struct GuestRootfsInput<'a> {
     pub runtime: &'a RuntimeInner,
-    pub init_rootfs_cell: &'a Arc<OnceCell<InitRootfs>>,
+    pub guest_rootfs_cell: &'a Arc<OnceCell<GuestRootfs>>,
 }
 
-/// Output from init image stage.
-pub struct InitImageOutput {
-    pub init_rootfs: InitRootfs,
+/// Output from guest rootfs stage.
+pub struct GuestRootfsOutput {
+    pub guest_rootfs: GuestRootfs,
 }
 
 /// Input for config stage.
@@ -186,7 +186,7 @@ pub struct ConfigInput<'a> {
     pub options: &'a BoxOptions,
     pub layout: &'a BoxFilesystemLayout,
     pub rootfs: &'a RootfsOutput,
-    pub init_rootfs: &'a InitRootfs,
+    pub guest_rootfs: &'a GuestRootfs,
     pub home_dir: &'a PathBuf,
     pub container_id: &'a ContainerId,
 }

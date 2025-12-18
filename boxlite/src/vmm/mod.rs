@@ -19,7 +19,7 @@ pub mod factory;
 pub mod krun;
 pub mod registry;
 
-use crate::runtime::initrf::InitRootfs;
+use crate::runtime::guest_rootfs::GuestRootfs;
 pub use engine::{Vmm, VmmConfig, VmmInstance};
 pub use factory::VmmFactory;
 pub use registry::create_engine;
@@ -168,8 +168,8 @@ pub struct InstanceSpec {
     pub transport: boxlite_shared::Transport,
     /// Host-side transport for ready notification (host listens, guest connects when ready)
     pub ready_transport: boxlite_shared::Transport,
-    /// Resolved rootfs path and assembly strategy
-    pub init_rootfs: InitRootfs,
+    /// Resolved guest rootfs path and assembly strategy
+    pub guest_rootfs: GuestRootfs,
     /// Network connection info (serializable, passed to subprocess)
     /// Contains the socket path or connection method to use
     pub network_backend_endpoint: Option<crate::net::NetworkBackendEndpoint>,

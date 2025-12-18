@@ -189,7 +189,7 @@ impl VmmController for ShimController {
             guest_entrypoint: config.guest_entrypoint.clone(),
             transport: config.transport.clone(),
             ready_transport: config.ready_transport.clone(),
-            init_rootfs: config.init_rootfs.clone(),
+            guest_rootfs: config.guest_rootfs.clone(),
             network_backend_endpoint: config.network_backend_endpoint.clone(), // Pass connection info to subprocess
             home_dir: config.home_dir.clone(),
             console_output: config.console_output.clone(),

@@ -1,17 +1,17 @@
-//! Resolved rootfs types and metadata.
+//! Guest rootfs types and metadata.
 
 use std::path::{Path, PathBuf};
 
 use boxlite_shared::errors::{BoxliteError, BoxliteResult};
 
-/// A fully resolved and ready-to-use rootfs.
+/// A fully resolved and ready-to-use guest rootfs.
 ///
-/// This struct represents the complete result of rootfs preparation:
+/// This struct represents the box's guest rootfs that runs boxlite-guest:
 /// - Image pulled (if needed)
 /// - Layers extracted/overlayed
 /// - Guest binary injected and validated
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct InitRootfs {
+pub struct GuestRootfs {
     /// Path to the merged/final rootfs directory
     pub path: PathBuf,
 
@@ -63,8 +63,8 @@ pub enum Strategy {
 
     /// Disk-based rootfs (ext4 disk image)
     ///
-    /// The init rootfs is stored in an ext4 disk image that the VM boots from.
-    /// This provides better performance than virtiofs for the init rootfs.
+    /// The guest rootfs is stored in an ext4 disk image that the box boots from.
+    /// This provides better performance than virtiofs for the guest rootfs.
     Disk {
         /// Path to the ext4 disk image
         disk_path: PathBuf,
@@ -74,8 +74,8 @@ pub enum Strategy {
     },
 }
 
-impl InitRootfs {
-    /// Create a new InitRootfs, injecting the guest binary if needed.
+impl GuestRootfs {
+    /// Create a new GuestRootfs, injecting the guest binary if needed.
     pub fn new(
         path: PathBuf,
         strategy: Strategy,

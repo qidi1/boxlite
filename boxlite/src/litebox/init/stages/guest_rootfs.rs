@@ -1,59 +1,62 @@
-//! Stage 3: Init image preparation.
+//! Stage 3: Guest rootfs preparation.
 //!
-//! Lazily initializes the bootstrap init rootfs as a disk image (shared across all boxes).
+//! Lazily initializes the bootstrap guest rootfs as a disk image (shared across all boxes).
 
-use crate::litebox::init::types::{InitImageInput, InitImageOutput};
+use crate::litebox::init::types::{GuestRootfsInput, GuestRootfsOutput};
 use crate::rootfs::RootfsBuilder;
 use crate::runtime::constants::images;
-use crate::runtime::initrf::{InitRootfs, Strategy};
+use crate::runtime::guest_rootfs::{GuestRootfs, Strategy};
 use crate::util;
 use crate::volumes::create_ext4_from_dir;
 use boxlite_shared::errors::{BoxliteError, BoxliteResult};
 
-/// Get or initialize bootstrap init image.
+/// Get or initialize bootstrap guest rootfs.
 ///
-/// **Single Responsibility**: Init rootfs lazy initialization.
-pub async fn run(input: InitImageInput<'_>) -> BoxliteResult<InitImageOutput> {
-    let init_rootfs = input
-        .init_rootfs_cell
+/// **Single Responsibility**: Guest rootfs lazy initialization.
+pub async fn run(input: GuestRootfsInput<'_>) -> BoxliteResult<GuestRootfsOutput> {
+    let guest_rootfs = input
+        .guest_rootfs_cell
         .get_or_try_init(|| async {
             tracing::info!(
-                "Initializing bootstrap init image {} (first time only)",
+                "Initializing bootstrap guest rootfs {} (first time only)",
                 images::INIT_ROOTFS
             );
 
-            let base_image = pull_init_image(input.runtime).await?;
+            let base_image = pull_guest_rootfs_image(input.runtime).await?;
             let env = extract_env_from_image(&base_image).await?;
-            let init_rootfs = prepare_init_rootfs(input.runtime, &base_image, env).await?;
+            let guest_rootfs = prepare_guest_rootfs(input.runtime, &base_image, env).await?;
 
-            tracing::info!("Bootstrap init image ready: {:?}", init_rootfs.strategy);
+            tracing::info!("Bootstrap guest rootfs ready: {:?}", guest_rootfs.strategy);
 
-            Ok::<_, BoxliteError>(init_rootfs)
+            Ok::<_, BoxliteError>(guest_rootfs)
         })
         .await?;
 
-    Ok(InitImageOutput {
-        init_rootfs: init_rootfs.clone(),
+    Ok(GuestRootfsOutput {
+        guest_rootfs: guest_rootfs.clone(),
     })
 }
 
-/// Prepare init rootfs as a disk image.
-async fn prepare_init_rootfs(
+/// Prepare guest rootfs as a disk image.
+async fn prepare_guest_rootfs(
     runtime: &crate::runtime::RuntimeInner,
     base_image: &crate::images::ImageObject,
     env: Vec<(String, String)>,
-) -> BoxliteResult<InitRootfs> {
+) -> BoxliteResult<GuestRootfs> {
     // Check if we already have a cached disk image
     if let Some(disk) = base_image.disk_image().await {
         // Verify guest binary is not newer than cached disk
         if is_cache_valid(disk.path())? {
             let disk_path = disk.path().to_path_buf();
-            tracing::info!("Using cached init disk image: {}", disk_path.display());
+            tracing::info!(
+                "Using cached guest rootfs disk image: {}",
+                disk_path.display()
+            );
 
             // Leak the disk to prevent cleanup (it's a cached persistent disk)
             let _ = disk.leak();
 
-            return InitRootfs::new(
+            return GuestRootfs::new(
                 disk_path.clone(),
                 Strategy::Disk {
                     disk_path,
@@ -67,14 +70,14 @@ async fn prepare_init_rootfs(
 
         // Cache invalid - delete and recreate
         tracing::info!(
-            "Guest binary updated, invalidating cached init disk: {}",
+            "Guest binary updated, invalidating cached guest rootfs disk: {}",
             disk.path().display()
         );
         std::fs::remove_file(disk.path()).ok();
     }
 
     // No cached disk - create from layers
-    tracing::info!("Creating init disk image from layers (first run)");
+    tracing::info!("Creating guest rootfs disk image from layers (first run)");
 
     // Extract layers to temp directory within boxlite home (same filesystem as destination)
     let temp_base = runtime.non_sync_state.layout.temp_dir();
@@ -106,7 +109,7 @@ async fn prepare_init_rootfs(
     }
 
     // Create ext4 disk from merged directory
-    let temp_disk_path = temp_dir.path().join("init-rootfs.ext4");
+    let temp_disk_path = temp_dir.path().join("guest-rootfs.ext4");
     let merged_clone = prepared.path.clone();
     let disk_clone = temp_disk_path.clone();
     let temp_disk =
@@ -119,7 +122,7 @@ async fn prepare_init_rootfs(
         .unwrap_or(0);
 
     tracing::info!(
-        "Created init disk: {} ({}MB)",
+        "Created guest rootfs disk: {} ({}MB)",
         temp_disk.path().display(),
         disk_size / (1024 * 1024)
     );
@@ -131,11 +134,14 @@ async fn prepare_init_rootfs(
     // Leak the disk to prevent cleanup
     let _ = installed_disk.leak();
 
-    tracing::info!("Installed init disk to cache: {}", final_path.display());
+    tracing::info!(
+        "Installed guest rootfs disk to cache: {}",
+        final_path.display()
+    );
 
     // temp_dir is dropped here, cleaning up the merged directory
 
-    InitRootfs::new(
+    GuestRootfs::new(
         final_path.clone(),
         Strategy::Disk {
             disk_path: final_path,
@@ -147,7 +153,7 @@ async fn prepare_init_rootfs(
     )
 }
 
-async fn pull_init_image(
+async fn pull_guest_rootfs_image(
     runtime: &crate::runtime::RuntimeInner,
 ) -> BoxliteResult<crate::images::ImageObject> {
     let image_manager = {
@@ -184,7 +190,7 @@ async fn extract_env_from_image(
     Ok(env)
 }
 
-/// Check if cached init disk is still valid.
+/// Check if cached guest rootfs disk is still valid.
 ///
 /// Returns false if the current guest binary is newer than the cached disk,
 /// indicating the cache should be invalidated and recreated.

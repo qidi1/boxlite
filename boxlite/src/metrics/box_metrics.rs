@@ -28,8 +28,8 @@ pub struct BoxMetricsStorage {
     pub(crate) stage_filesystem_setup_ms: Option<u128>,
     /// Time to pull and prepare container image layers (Stage 2)
     pub(crate) stage_image_prepare_ms: Option<u128>,
-    /// Time to bootstrap init rootfs (Stage 3, lazy initialization)
-    pub(crate) stage_init_rootfs_ms: Option<u128>,
+    /// Time to bootstrap guest rootfs (Stage 3, lazy initialization)
+    pub(crate) stage_guest_rootfs_ms: Option<u128>,
     /// Time to build box configuration (Stage 4)
     pub(crate) stage_box_config_ms: Option<u128>,
     /// Time to spawn box subprocess (Stage 5, excludes guest boot)
@@ -49,7 +49,7 @@ impl Clone for BoxMetricsStorage {
             guest_boot_duration_ms: self.guest_boot_duration_ms,
             stage_filesystem_setup_ms: self.stage_filesystem_setup_ms,
             stage_image_prepare_ms: self.stage_image_prepare_ms,
-            stage_init_rootfs_ms: self.stage_init_rootfs_ms,
+            stage_guest_rootfs_ms: self.stage_guest_rootfs_ms,
             stage_box_config_ms: self.stage_box_config_ms,
             stage_box_spawn_ms: self.stage_box_spawn_ms,
             stage_container_init_ms: self.stage_container_init_ms,
@@ -83,9 +83,9 @@ impl BoxMetricsStorage {
         self.stage_image_prepare_ms = Some(duration_ms);
     }
 
-    /// Set init rootfs bootstrap stage duration.
-    pub(crate) fn set_stage_init_rootfs(&mut self, duration_ms: u128) {
-        self.stage_init_rootfs_ms = Some(duration_ms);
+    /// Set guest rootfs bootstrap stage duration.
+    pub(crate) fn set_stage_guest_rootfs(&mut self, duration_ms: u128) {
+        self.stage_guest_rootfs_ms = Some(duration_ms);
     }
 
     /// Set box config build stage duration.
@@ -162,8 +162,8 @@ pub struct BoxMetrics {
     pub stage_filesystem_setup_ms: Option<u128>,
     /// Time to pull and prepare container image layers (milliseconds)
     pub stage_image_prepare_ms: Option<u128>,
-    /// Time to bootstrap init rootfs (milliseconds)
-    pub stage_init_rootfs_ms: Option<u128>,
+    /// Time to bootstrap guest rootfs (milliseconds)
+    pub stage_guest_rootfs_ms: Option<u128>,
     /// Time to build box configuration (milliseconds)
     pub stage_box_config_ms: Option<u128>,
     /// Time to spawn box subprocess (milliseconds)
@@ -198,7 +198,7 @@ impl BoxMetrics {
             network_tcp_errors,
             stage_filesystem_setup_ms: storage.stage_filesystem_setup_ms,
             stage_image_prepare_ms: storage.stage_image_prepare_ms,
-            stage_init_rootfs_ms: storage.stage_init_rootfs_ms,
+            stage_guest_rootfs_ms: storage.stage_guest_rootfs_ms,
             stage_box_config_ms: storage.stage_box_config_ms,
             stage_box_spawn_ms: storage.stage_box_spawn_ms,
             stage_container_init_ms: storage.stage_container_init_ms,
@@ -238,7 +238,7 @@ impl BoxMetrics {
     /// Total time from create() call to box ready (milliseconds).
     ///
     /// Includes all initialization stages: filesystem setup, image pull,
-    /// init rootfs bootstrap, box config, box spawn, and container init.
+    /// guest rootfs bootstrap, box config, box spawn, and container init.
     /// Returns None if box not yet initialized.
     pub fn total_create_duration_ms(&self) -> Option<u128> {
         self.total_create_duration_ms
@@ -313,13 +313,13 @@ impl BoxMetrics {
         self.stage_image_prepare_ms
     }
 
-    /// Time to bootstrap init rootfs (milliseconds).
+    /// Time to bootstrap guest rootfs (milliseconds).
     ///
     /// Stage 3 of initialization pipeline.
     /// Only non-zero on first box creation (lazy initialization).
     /// Returns None if stage not yet completed.
-    pub fn stage_init_rootfs_ms(&self) -> Option<u128> {
-        self.stage_init_rootfs_ms
+    pub fn stage_guest_rootfs_ms(&self) -> Option<u128> {
+        self.stage_guest_rootfs_ms
     }
 
     /// Time to build box configuration (milliseconds).

@@ -10,15 +10,15 @@
 //!                 │
 //! Rootfs ─────────┼──→ Config ──→ Spawn ──→ Guest
 //!                 │
-//! InitImage ──────┘
+//! GuestRootfs ────┘
 //!
-//! Parallel:   [Filesystem, Rootfs, InitImage]
+//! Parallel:   [Filesystem, Rootfs, GuestRootfs]
 //! Sequential: Config → Spawn → Guest
 //! ```
 
 pub mod config;
 pub mod filesystem;
 pub mod guest;
-pub mod init_image;
+pub mod guest_rootfs;
 pub mod rootfs;
 pub mod spawn;

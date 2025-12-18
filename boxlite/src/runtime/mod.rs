@@ -1,5 +1,5 @@
 pub mod constants;
-pub(crate) mod initrf;
+pub(crate) mod guest_rootfs;
 pub(crate) mod layout;
 pub(crate) mod lock;
 pub mod options;

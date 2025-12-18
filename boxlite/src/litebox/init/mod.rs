@@ -9,9 +9,9 @@
 //!                 │
 //! Rootfs ─────────┼──→ Config ──→ Spawn ──→ Guest
 //!                 │
-//! InitImage ──────┘
+//! GuestRootfs ────┘
 //!
-//! Parallel:   [Filesystem, Rootfs, InitImage]  (tokio::join!)
+//! Parallel:   [Filesystem, Rootfs, GuestRootfs]  (tokio::join!)
 //! Sequential: Config → Spawn → Guest
 //! ```
 //!
@@ -51,7 +51,7 @@ impl BoxBuilder {
     /// # Arguments
     ///
     /// * `box_id` - Unique identifier for this box
-    /// * `runtime` - Runtime providing resources (layout, init_rootfs, etc.)
+    /// * `runtime` - Runtime providing resources (layout, guest_rootfs, etc.)
     /// * `options` - Box configuration (image, memory, cpus, etc.)
     pub(crate) fn new(box_id: BoxID, runtime: RuntimeInner, options: BoxOptions) -> Self {
         Self {
@@ -67,14 +67,14 @@ impl BoxBuilder {
     pub(crate) async fn build(self) -> BoxliteResult<BoxInner> {
         // Derive internal values from runtime
         let home_dir = self.runtime.non_sync_state.layout.home_dir().to_path_buf();
-        let init_rootfs = Arc::clone(&self.runtime.non_sync_state.init_rootfs);
+        let guest_rootfs_cell = Arc::clone(&self.runtime.non_sync_state.guest_rootfs);
 
         let pipeline = InitPipeline::new(
             self.box_id,
             home_dir,
             self.options,
             self.runtime,
-            init_rootfs,
+            guest_rootfs_cell,
         );
 
         pipeline.run().await

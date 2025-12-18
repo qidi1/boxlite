@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use crate::litebox::{BoxBuilder, LiteBox};
 use crate::runtime::constants::filenames;
-use crate::runtime::initrf::InitRootfs;
+use crate::runtime::guest_rootfs::GuestRootfs;
 use crate::runtime::layout::{FilesystemLayout, FsLayoutConfig};
 use crate::runtime::lock::RuntimeLock;
 use crate::runtime::options::{BoxOptions, BoxliteOptions, RootfsSpec};
@@ -87,7 +87,7 @@ pub struct SynchronizedState {
 /// RuntimeMetricsStorage lives here because it uses AtomicU64 internally - no lock needed!
 pub struct NonSynchronizedState {
     pub(crate) layout: FilesystemLayout,
-    pub(crate) init_rootfs: Arc<OnceCell<InitRootfs>>,
+    pub(crate) guest_rootfs: Arc<OnceCell<GuestRootfs>>,
     /// Runtime-wide metrics (AtomicU64 based, lock-free)
     pub(crate) runtime_metrics: RuntimeMetricsStorage,
     _runtime_lock: RuntimeLock,
@@ -160,7 +160,7 @@ impl BoxliteRuntime {
             }),
             non_sync_state: NonSynchronizedState {
                 layout,
-                init_rootfs: Arc::new(OnceCell::new()),
+                guest_rootfs: Arc::new(OnceCell::new()),
                 runtime_metrics: RuntimeMetricsStorage::new(),
                 _runtime_lock: runtime_lock,
             },

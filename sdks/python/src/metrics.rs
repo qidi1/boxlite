@@ -75,7 +75,7 @@ pub(crate) struct PyBoxMetrics {
     #[pyo3(get)]
     pub(crate) stage_image_prepare_ms: Option<u128>,
     #[pyo3(get)]
-    pub(crate) stage_init_rootfs_ms: Option<u128>,
+    pub(crate) stage_guest_rootfs_ms: Option<u128>,
     #[pyo3(get)]
     pub(crate) stage_box_config_ms: Option<u128>,
     #[pyo3(get)]
@@ -116,7 +116,7 @@ impl From<BoxMetrics> for PyBoxMetrics {
             network_tcp_errors: metrics.network_tcp_errors(),
             stage_filesystem_setup_ms: metrics.stage_filesystem_setup_ms(),
             stage_image_prepare_ms: metrics.stage_image_prepare_ms(),
-            stage_init_rootfs_ms: metrics.stage_init_rootfs_ms(),
+            stage_guest_rootfs_ms: metrics.stage_guest_rootfs_ms(),
             stage_box_config_ms: metrics.stage_box_config_ms(),
             stage_box_spawn_ms: metrics.stage_box_spawn_ms(),
             stage_container_init_ms: metrics.stage_container_init_ms(),

@@ -6,7 +6,7 @@ use crate::BoxID;
 use crate::controller::ShimController;
 use crate::metrics::BoxMetricsStorage;
 use crate::runtime::RuntimeInner;
-use crate::runtime::initrf::InitRootfs;
+use crate::runtime::guest_rootfs::GuestRootfs;
 use crate::runtime::layout::BoxFilesystemLayout;
 use crate::runtime::options::BoxOptions;
 use crate::runtime::types::ContainerId;
@@ -100,7 +100,7 @@ pub struct InitPipeline {
     home_dir: PathBuf,
     options: BoxOptions,
     runtime: RuntimeInner,
-    init_rootfs_cell: Arc<OnceCell<InitRootfs>>,
+    guest_rootfs_cell: Arc<OnceCell<GuestRootfs>>,
 }
 
 impl InitPipeline {
@@ -109,14 +109,14 @@ impl InitPipeline {
         home_dir: PathBuf,
         options: BoxOptions,
         runtime: RuntimeInner,
-        init_rootfs_cell: Arc<OnceCell<InitRootfs>>,
+        guest_rootfs_cell: Arc<OnceCell<GuestRootfs>>,
     ) -> Self {
         Self {
             box_id,
             home_dir,
             options,
             runtime,
-            init_rootfs_cell,
+            guest_rootfs_cell,
         }
     }
 
@@ -161,12 +161,12 @@ impl InitPipeline {
                 .await;
                 (result, start.elapsed().as_millis())
             },
-            // Stage 3: Init image (lazy initialization)
+            // Stage 3: Guest rootfs (lazy initialization)
             async {
                 let start = Instant::now();
-                let result = stages::init_image::run(InitImageInput {
+                let result = stages::guest_rootfs::run(GuestRootfsInput {
                     runtime: &self.runtime,
-                    init_rootfs_cell: &self.init_rootfs_cell,
+                    guest_rootfs_cell: &self.guest_rootfs_cell,
                 })
                 .await;
                 (result, start.elapsed().as_millis())
@@ -184,9 +184,9 @@ impl InitPipeline {
             tracing::error!(box_id = %self.box_id, stage = "rootfs", "Box init failed: {}", e);
         })?;
 
-        let (init_output, stage_init_rootfs_ms) = init_result;
-        let init_output = init_output.inspect_err(|e| {
-            tracing::error!(box_id = %self.box_id, stage = "init_image", "Box init failed: {}", e);
+        let (guest_rootfs_output, stage_guest_rootfs_ms) = init_result;
+        let guest_rootfs_output = guest_rootfs_output.inspect_err(|e| {
+            tracing::error!(box_id = %self.box_id, stage = "guest_rootfs", "Box init failed: {}", e);
         })?;
 
         // Register layout for cleanup (after parallel phase succeeds)
@@ -202,7 +202,7 @@ impl InitPipeline {
             options: &self.options,
             layout: &fs_output.layout,
             rootfs: &rootfs_output,
-            init_rootfs: &init_output.init_rootfs,
+            guest_rootfs: &guest_rootfs_output.guest_rootfs,
             home_dir: &self.home_dir,
             container_id: &container_id,
         })
@@ -269,7 +269,7 @@ impl InitPipeline {
         // Set stage durations
         metrics.set_stage_filesystem_setup(stage_filesystem_setup_ms);
         metrics.set_stage_image_prepare(stage_image_prepare_ms);
-        metrics.set_stage_init_rootfs(stage_init_rootfs_ms);
+        metrics.set_stage_guest_rootfs(stage_guest_rootfs_ms);
         metrics.set_stage_box_config(stage_box_config_ms);
         metrics.set_stage_box_spawn(stage_box_spawn_ms);
         metrics.set_stage_container_init(stage_container_init_ms);
@@ -278,7 +278,7 @@ impl InitPipeline {
             total_create_duration_ms,
             stage_filesystem_setup_ms,
             stage_image_prepare_ms,
-            stage_init_rootfs_ms,
+            stage_guest_rootfs_ms,
             stage_box_config_ms,
             stage_box_spawn_ms,
             stage_container_init_ms,

@@ -44,7 +44,7 @@ pub async fn run(input: ConfigInput<'_>) -> BoxliteResult<ConfigOutput> {
     let guest_entrypoint = build_guest_entrypoint(
         &transport,
         &ready_transport,
-        input.init_rootfs,
+        input.guest_rootfs,
         input.options,
     )?;
 
@@ -73,9 +73,9 @@ pub async fn run(input: ConfigInput<'_>) -> BoxliteResult<ConfigOutput> {
         None
     };
 
-    // Create COW child disk for init rootfs (protects shared base from writes)
-    let (init_rootfs, init_disk) =
-        create_init_disk(input.layout, input.init_rootfs, &mut block_manager)?;
+    // Create COW child disk for guest rootfs (protects shared base from writes)
+    let (guest_rootfs, init_disk) =
+        create_guest_rootfs_disk(input.layout, input.guest_rootfs, &mut block_manager)?;
 
     let block_devices = block_manager.build();
 
@@ -88,7 +88,7 @@ pub async fn run(input: ConfigInput<'_>) -> BoxliteResult<ConfigOutput> {
         guest_entrypoint,
         transport: transport.clone(),
         ready_transport: ready_transport.clone(),
-        init_rootfs,
+        guest_rootfs,
         network_backend_endpoint: network_backend.as_ref().map(|b| b.endpoint()).transpose()?,
         home_dir: input.home_dir.clone(),
         console_output: None,
@@ -143,14 +143,14 @@ fn build_fs_shares(
 fn build_guest_entrypoint(
     transport: &Transport,
     ready_transport: &Transport,
-    init_rootfs: &crate::runtime::initrf::InitRootfs,
+    guest_rootfs: &crate::runtime::guest_rootfs::GuestRootfs,
     options: &crate::runtime::options::BoxOptions,
 ) -> BoxliteResult<Entrypoint> {
     let listen_uri = transport.to_uri();
     let ready_notify_uri = ready_transport.to_uri();
 
-    // Start with init image's env
-    let mut env: Vec<(String, String)> = init_rootfs.env.clone();
+    // Start with guest rootfs env
+    let mut env: Vec<(String, String)> = guest_rootfs.env.clone();
 
     // Override with user env vars
     for (key, value) in &options.env {
@@ -261,54 +261,55 @@ async fn create_disks(
     ))
 }
 
-/// Create COW child disk for init rootfs.
+/// Create COW child disk for guest rootfs.
 ///
-/// Protects the shared base init rootfs from writes by creating a per-box
-/// qcow2 overlay. Returns the updated InitRootfs with device path and the
+/// Protects the shared base guest rootfs from writes by creating a per-box
+/// qcow2 overlay. Returns the updated GuestRootfs with device path and the
 /// COW disk (to prevent cleanup on drop).
-fn create_init_disk(
+fn create_guest_rootfs_disk(
     layout: &crate::runtime::layout::BoxFilesystemLayout,
-    init_rootfs: &crate::runtime::initrf::InitRootfs,
+    guest_rootfs: &crate::runtime::guest_rootfs::GuestRootfs,
     block_manager: &mut BlockDeviceManager,
 ) -> BoxliteResult<(
-    crate::runtime::initrf::InitRootfs,
+    crate::runtime::guest_rootfs::GuestRootfs,
     Option<crate::volumes::Disk>,
 )> {
-    let mut init_rootfs = init_rootfs.clone();
+    let mut guest_rootfs = guest_rootfs.clone();
 
-    let init_disk = if let crate::runtime::initrf::Strategy::Disk { ref disk_path, .. } =
-        init_rootfs.strategy
-    {
-        let base_disk_path = disk_path;
+    let guest_rootfs_disk =
+        if let crate::runtime::guest_rootfs::Strategy::Disk { ref disk_path, .. } =
+            guest_rootfs.strategy
+        {
+            let base_disk_path = disk_path;
 
-        // Get base disk size
-        let base_size = std::fs::metadata(base_disk_path)
-            .map(|m| m.len())
-            .unwrap_or(512 * 1024 * 1024);
+            // Get base disk size
+            let base_size = std::fs::metadata(base_disk_path)
+                .map(|m| m.len())
+                .unwrap_or(512 * 1024 * 1024);
 
-        // Create COW child disk
-        let init_disk_path = layout.root().join("init.qcow2");
-        let qcow2_helper = Qcow2Helper::new();
-        let init_disk = qcow2_helper.create_cow_child_disk(
-            base_disk_path,
-            BackingFormat::Raw,
-            &init_disk_path,
-            base_size,
-        )?;
+            // Create COW child disk
+            let guest_rootfs_disk_path = layout.root().join("guest-rootfs.qcow2");
+            let qcow2_helper = Qcow2Helper::new();
+            let disk = qcow2_helper.create_cow_child_disk(
+                base_disk_path,
+                BackingFormat::Raw,
+                &guest_rootfs_disk_path,
+                base_size,
+            )?;
 
-        // Register COW child (not the base)
-        let device_path = block_manager.add_disk(init_disk.path(), DiskFormat::Qcow2);
+            // Register COW child (not the base)
+            let device_path = block_manager.add_disk(disk.path(), DiskFormat::Qcow2);
 
-        // Update strategy with COW child disk path and device
-        init_rootfs.strategy = crate::runtime::initrf::Strategy::Disk {
-            disk_path: init_disk_path,
-            device_path: Some(device_path),
+            // Update strategy with COW child disk path and device
+            guest_rootfs.strategy = crate::runtime::guest_rootfs::Strategy::Disk {
+                disk_path: guest_rootfs_disk_path,
+                device_path: Some(device_path),
+            };
+
+            Some(disk)
+        } else {
+            None
         };
 
-        Some(init_disk)
-    } else {
-        None
-    };
-
-    Ok((init_rootfs, init_disk))
+    Ok((guest_rootfs, guest_rootfs_disk))
 }
