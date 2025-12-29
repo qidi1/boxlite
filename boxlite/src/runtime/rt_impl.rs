@@ -121,16 +121,17 @@ impl RuntimeImpl {
             ))
         })?;
 
-        // Clean and recreate temp dir to avoid stale files from previous runs
-        let _ = std::fs::remove_dir_all(layout.temp_dir());
-
-        let image_manager = ImageManager::new(layout.images_dir()).map_err(|e| {
-            BoxliteError::Storage(format!(
-                "Failed to initialize image manager at {}: {}",
-                layout.images_dir().display(),
-                e
-            ))
-        })?;
+        // Clean temp dir contents to avoid stale files from previous runs
+        if let Ok(entries) = std::fs::read_dir(layout.temp_dir()) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let _ = std::fs::remove_dir_all(&path);
+                } else {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
 
         let db = Database::open(&layout.db_dir().join("boxlite.db")).map_err(|e| {
             BoxliteError::Storage(format!(
@@ -139,6 +140,15 @@ impl RuntimeImpl {
                 e
             ))
         })?;
+
+        let image_manager = ImageManager::new(layout.images_dir(), db.clone()).map_err(|e| {
+            BoxliteError::Storage(format!(
+                "Failed to initialize image manager at {}: {}",
+                layout.images_dir().display(),
+                e
+            ))
+        })?;
+
         let box_store = BoxStore::new(db);
 
         // Initialize lock manager for per-entity multiprocess-safe locking
