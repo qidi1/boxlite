@@ -11,6 +11,7 @@ pub mod factory;
 pub mod krun;
 pub mod registry;
 
+use crate::jailer::SecurityOptions;
 use crate::runtime::guest_rootfs::GuestRootfs;
 pub use engine::{Vmm, VmmConfig, VmmInstance};
 pub use factory::VmmFactory;
@@ -139,6 +140,13 @@ impl BlockDevices {
 /// communication channel, and additional environment variables.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct InstanceSpec {
+    /// Unique identifier for this box instance.
+    /// Used for logging, cgroup naming, and isolation identification.
+    pub box_id: String,
+    /// Security options for jailer isolation (seccomp, etc.).
+    /// On Linux, these control seccomp filtering applied in the shim.
+    #[serde(default)]
+    pub security: SecurityOptions,
     pub cpus: Option<u8>,
     pub memory_mib: Option<u32>,
     /// Filesystem shares from host to guest

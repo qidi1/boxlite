@@ -85,7 +85,7 @@ impl PipelineTask<InitCtx> for VmmSpawnTask {
         .inspect_err(|e| log_task_error(&box_id, task_name, e))?;
 
         // Spawn VM
-        let handler = spawn_vm(&box_id, &instance_spec)
+        let handler = spawn_vm(&box_id, &instance_spec, &options)
             .await
             .inspect_err(|e| log_task_error(&box_id, task_name, e))?;
 
@@ -208,8 +208,13 @@ async fn build_config(
 
     // Assemble VMM instance spec
     let instance_spec = InstanceSpec {
+        // Box identification and security
+        box_id: box_id.to_string(),
+        security: options.security.clone(),
+        // VM resources
         cpus: options.cpus,
         memory_mib: options.memory_mib,
+        // Filesystem and devices
         fs_shares: vmm_config.fs_shares,
         block_devices: vmm_config.block_devices,
         guest_entrypoint,
@@ -334,11 +339,16 @@ fn build_network_config(
 }
 
 /// Spawn VM subprocess and return handler.
-async fn spawn_vm(box_id: &BoxID, config: &InstanceSpec) -> BoxliteResult<Box<dyn VmmHandler>> {
+async fn spawn_vm(
+    box_id: &BoxID,
+    config: &InstanceSpec,
+    options: &BoxOptions,
+) -> BoxliteResult<Box<dyn VmmHandler>> {
     let mut controller = ShimController::new(
         find_binary("boxlite-shim")?,
         VmmKind::Libkrun,
         box_id.clone(),
+        options.clone(),
     )?;
 
     controller.start(config).await

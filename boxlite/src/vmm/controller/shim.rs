@@ -133,6 +133,8 @@ pub struct ShimController {
     binary_path: PathBuf,
     engine_type: VmmKind,
     box_id: BoxID,
+    /// Box options (includes security and volumes for jailer isolation)
+    options: crate::runtime::options::BoxOptions,
 }
 
 impl ShimController {
@@ -142,11 +144,17 @@ impl ShimController {
     /// * `binary_path` - Path to the boxlite-shim binary
     /// * `engine_type` - Type of VM engine to use (libkrun, firecracker, etc.)
     /// * `box_id` - Unique identifier for this box
+    /// * `options` - Box options (includes security and volumes)
     ///
     /// # Returns
     /// * `Ok(ShimController)` - Successfully created controller
     /// * `Err(...)` - Failed to create controller (e.g., binary not found)
-    pub fn new(binary_path: PathBuf, engine_type: VmmKind, box_id: BoxID) -> BoxliteResult<Self> {
+    pub fn new(
+        binary_path: PathBuf,
+        engine_type: VmmKind,
+        box_id: BoxID,
+        options: crate::runtime::options::BoxOptions,
+    ) -> BoxliteResult<Self> {
         // Verify that the shim binary exists
         if !binary_path.exists() {
             return Err(BoxliteError::Engine(format!(
@@ -159,6 +167,7 @@ impl ShimController {
             binary_path,
             engine_type,
             box_id,
+            options,
         })
     }
 }
@@ -185,6 +194,10 @@ impl VmmController for ShimController {
         guest_entrypoint.env = env; // Use the modified env with RUST_LOG
 
         let serializable_config = InstanceSpec {
+            // Box identification and security (from ShimController)
+            box_id: self.box_id.to_string(),
+            security: self.options.security.clone(),
+            // VM configuration
             cpus: config.cpus,
             memory_mib: config.memory_mib,
             fs_shares: config.fs_shares.clone(),
@@ -223,20 +236,6 @@ impl VmmController for ShimController {
         tracing::debug!(binary = %self.binary_path.display(), "Box runner binary");
         tracing::trace!(config = %config_json, "Box configuration");
 
-        // Convert fs_shares to VolumeSpec for macOS sandbox path restrictions
-        // The sandbox will ONLY allow reading/writing paths in this list
-        use crate::runtime::options::VolumeSpec;
-        let volumes: Vec<VolumeSpec> = config
-            .fs_shares
-            .shares()
-            .iter()
-            .map(|share| VolumeSpec {
-                host_path: share.host_path.to_string_lossy().to_string(),
-                guest_path: share.tag.clone(), // Use tag as guest_path for logging
-                read_only: share.read_only,
-            })
-            .collect();
-
         // Measure subprocess spawn time
         let shim_spawn_start = Instant::now();
         let child = spawn_subprocess(
@@ -245,7 +244,7 @@ impl VmmController for ShimController {
             &config_json,
             &config.home_dir,
             self.box_id.as_str(),
-            &volumes,
+            &self.options,
         )?;
         // spawn_duration: time to create Box subprocess
         let shim_spawn_duration = shim_spawn_start.elapsed();

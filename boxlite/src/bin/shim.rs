@@ -92,7 +92,11 @@ fn main() -> BoxliteResult<()> {
     // Keep guard alive until end of main to ensure logs are written
     let _log_guard = init_logging(&config.home_dir);
 
-    tracing::info!(engine = ?args.engine, "Box runner starting");
+    tracing::info!(
+        engine = ?args.engine,
+        box_id = %config.box_id,
+        "Box runner starting"
+    );
     tracing::debug!(
         shares = ?config.fs_shares.shares(),
         "Filesystem shares configured"
@@ -101,6 +105,58 @@ fn main() -> BoxliteResult<()> {
         entrypoint = ?config.guest_entrypoint.executable,
         "Guest entrypoint configured"
     );
+
+    // =========================================================================
+    // Apply Linux jailer isolation (seccomp)
+    // =========================================================================
+    //
+    // On Linux, apply seccomp filtering before any untrusted code runs.
+    // This restricts the syscalls available to this process.
+    //
+    // By this point, the following isolation is already in place (from bwrap):
+    // - Namespaces: mount, user, PID, IPC, UTS
+    // - Filesystem: chroot/pivot_root with minimal mounts
+    // - Environment: cleared (clearenv)
+    // - FDs: closed except stdin/stdout/stderr (pre_exec hook)
+    // - Resource limits: rlimits and cgroup membership (pre_exec hook)
+    //
+    // We add: Seccomp syscall filtering
+    #[cfg(target_os = "linux")]
+    {
+        use boxlite::jailer::platform::linux;
+        use boxlite::runtime::layout::{FilesystemLayout, FsLayoutConfig};
+
+        if config.security.jailer_enabled {
+            tracing::info!(
+                box_id = %config.box_id,
+                seccomp_enabled = config.security.seccomp_enabled,
+                "Applying Linux jailer isolation"
+            );
+
+            let layout = FilesystemLayout::new(config.home_dir.clone(), FsLayoutConfig::default());
+
+            if let Err(e) = linux::apply_isolation(&config.security, &config.box_id, &layout) {
+                // Log error but don't fail - allows debugging with isolation disabled
+                tracing::error!(
+                    box_id = %config.box_id,
+                    error = %e,
+                    "Failed to apply Linux jailer isolation"
+                );
+                // Re-raise the error to fail startup if isolation was required
+                return Err(e);
+            }
+
+            tracing::info!(
+                box_id = %config.box_id,
+                "Linux jailer isolation applied successfully"
+            );
+        } else {
+            tracing::warn!(
+                box_id = %config.box_id,
+                "Jailer disabled - running without process isolation"
+            );
+        }
+    }
 
     // Create network backend (gvproxy) from network_config if present.
     // gvproxy provides virtio-net (eth0) to the guest - required even without port mappings.

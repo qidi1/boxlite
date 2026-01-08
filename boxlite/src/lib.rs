@@ -35,7 +35,9 @@ pub use litebox::{
 };
 pub use metrics::{BoxMetrics, RuntimeMetrics};
 use runtime::layout::FilesystemLayout;
-pub use runtime::options::{BoxOptions, BoxliteOptions, RootfsSpec};
+pub use runtime::options::{
+    BoxOptions, BoxliteOptions, ResourceLimits, RootfsSpec, SecurityOptions,
+};
 pub use runtime::types::ContainerID;
 pub use runtime::types::{BoxID, BoxInfo, BoxState, BoxStatus};
 

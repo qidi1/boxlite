@@ -146,7 +146,6 @@ pub fn apply_isolation(
         close_fds = security.close_fds,
         sanitize_env = security.sanitize_env,
         network_enabled = security.network_enabled,
-        volume_count = security.volumes.len(),
         "macOS isolation active (sandbox applied at spawn)"
     );
 
@@ -169,9 +168,10 @@ pub fn apply_isolation(
 /// Returns the command and arguments to prepend when spawning the shim.
 ///
 /// # Arguments
-/// * `security` - Security configuration (includes volumes for path restrictions)
+/// * `security` - Security configuration
 /// * `box_dir` - Directory for this specific box
 /// * `binary_path` - Path to the binary being executed (needed for sandbox to read it)
+/// * `volumes` - Volume mounts for path restrictions
 ///
 /// # Returns
 /// Tuple of (command, args) to use instead of direct execution.
@@ -179,12 +179,13 @@ pub fn apply_isolation(
 /// # Security Model
 ///
 /// The generated policy implements strict whitelist:
-/// - Reads: system libs, binary_path, security.volumes
+/// - Reads: system libs, binary_path, volumes
 /// - Writes: /tmp, /var/tmp, {box_dir}/shared, writable volumes
 pub fn get_sandbox_exec_args(
     security: &SecurityOptions,
     box_dir: &Path,
     binary_path: &Path,
+    volumes: &[VolumeSpec],
 ) -> (String, Vec<String>) {
     let mut args = Vec::new();
 
@@ -194,7 +195,7 @@ pub fn get_sandbox_exec_args(
         args.push(profile_path.display().to_string());
     } else {
         // Build strict modular policy: base + file permissions + optional network
-        let policy = build_sandbox_policy(security, box_dir, binary_path);
+        let policy = build_sandbox_policy(security, box_dir, binary_path, volumes);
         args.push("-p".to_string());
         args.push(policy);
     }
@@ -230,8 +231,9 @@ pub fn write_sandbox_profile(
     security: &SecurityOptions,
     box_dir: &Path,
     binary_path: &Path,
+    volumes: &[VolumeSpec],
 ) -> std::io::Result<()> {
-    let policy = build_sandbox_policy(security, box_dir, binary_path);
+    let policy = build_sandbox_policy(security, box_dir, binary_path, volumes);
     std::fs::write(path, policy)
 }
 
@@ -270,7 +272,12 @@ pub fn get_network_policy() -> &'static str {
 ///    - {box_dir}/shared/, writable volumes
 ///
 /// 6. Network policy (optional, from seatbelt_network_policy.sbpl)
-fn build_sandbox_policy(security: &SecurityOptions, box_dir: &Path, binary_path: &Path) -> String {
+fn build_sandbox_policy(
+    security: &SecurityOptions,
+    box_dir: &Path,
+    binary_path: &Path,
+    volumes: &[VolumeSpec],
+) -> String {
     let mut policy = String::new();
 
     // Header
@@ -296,11 +303,7 @@ fn build_sandbox_policy(security: &SecurityOptions, box_dir: &Path, binary_path:
     policy.push('\n');
 
     // 3. Dynamic file READ (binary path + boxlite home + user volumes)
-    policy.push_str(&build_dynamic_read_volumes(
-        binary_path,
-        box_dir,
-        &security.volumes,
-    ));
+    policy.push_str(&build_dynamic_read_volumes(binary_path, box_dir, volumes));
     policy.push('\n');
 
     // 4. Static file WRITE (tmp paths from .sbpl)
@@ -308,7 +311,7 @@ fn build_sandbox_policy(security: &SecurityOptions, box_dir: &Path, binary_path:
     policy.push('\n');
 
     // 5. Dynamic file WRITE (shared dir + writable volumes)
-    policy.push_str(&build_dynamic_write_paths(box_dir, &security.volumes));
+    policy.push_str(&build_dynamic_write_paths(box_dir, volumes));
     policy.push('\n');
 
     // 6. Network policy (optional)
@@ -505,8 +508,9 @@ mod tests {
         let security = SecurityOptions::default();
         let box_dir = PathBuf::from("/tmp/test/boxes/test-box");
         let binary_path = PathBuf::from("/usr/local/bin/boxlite-shim");
+        let volumes: Vec<VolumeSpec> = vec![];
 
-        let (cmd, _args) = get_sandbox_exec_args(&security, &box_dir, &binary_path);
+        let (cmd, _args) = get_sandbox_exec_args(&security, &box_dir, &binary_path, &volumes);
 
         // Must use hardcoded path, not just "sandbox-exec"
         assert_eq!(cmd, "/usr/bin/sandbox-exec");
@@ -527,8 +531,9 @@ mod tests {
         };
         let box_dir = PathBuf::from("/tmp/test/boxes/test-box");
         let binary_path = PathBuf::from("/usr/local/bin/boxlite-shim");
+        let volumes: Vec<VolumeSpec> = vec![];
 
-        let policy = build_sandbox_policy(&security, &box_dir, &binary_path);
+        let policy = build_sandbox_policy(&security, &box_dir, &binary_path, &volumes);
 
         assert!(policy.contains("(allow network-outbound)"));
     }
@@ -541,8 +546,9 @@ mod tests {
         };
         let box_dir = PathBuf::from("/tmp/test/boxes/test-box");
         let binary_path = PathBuf::from("/usr/local/bin/boxlite-shim");
+        let volumes: Vec<VolumeSpec> = vec![];
 
-        let policy = build_sandbox_policy(&security, &box_dir, &binary_path);
+        let policy = build_sandbox_policy(&security, &box_dir, &binary_path, &volumes);
 
         assert!(!policy.contains("(allow network-outbound)"));
         assert!(policy.contains("Network disabled"));
@@ -640,8 +646,9 @@ mod tests {
         let security = SecurityOptions::default();
         let box_dir = PathBuf::from("/tmp/boxes/test");
         let binary_path = PathBuf::from("/tmp/test/boxlite-shim");
+        let volumes: Vec<VolumeSpec> = vec![];
 
-        let policy = build_sandbox_policy(&security, &box_dir, &binary_path);
+        let policy = build_sandbox_policy(&security, &box_dir, &binary_path, &volumes);
 
         // Should NOT contain blanket system path reads (e.g., entire /usr)
         assert!(

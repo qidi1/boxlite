@@ -19,6 +19,7 @@ pub mod macos;
 
 use crate::jailer::config::SecurityOptions;
 use crate::runtime::layout::FilesystemLayout;
+use crate::runtime::options::VolumeSpec;
 use boxlite_shared::errors::BoxliteResult;
 use std::path::Path;
 
@@ -49,6 +50,7 @@ pub trait PlatformIsolation: Send + Sync {
         security: &SecurityOptions,
         box_dir: &Path,
         binary_path: &Path,
+        volumes: &[VolumeSpec],
     ) -> Option<SpawnIsolation>;
 
     /// Platform name for logging/debugging.
@@ -94,6 +96,7 @@ impl PlatformIsolation for LinuxPlatform {
         _security: &SecurityOptions,
         _box_dir: &Path,
         _binary_path: &Path,
+        _volumes: &[VolumeSpec],
     ) -> Option<SpawnIsolation> {
         // Linux doesn't use spawn-time wrapping
         // (bwrap is handled separately in spawn.rs)
@@ -129,8 +132,9 @@ impl PlatformIsolation for MacOSPlatform {
         security: &SecurityOptions,
         box_dir: &Path,
         binary_path: &Path,
+        volumes: &[VolumeSpec],
     ) -> Option<SpawnIsolation> {
-        let (wrapper, args) = macos::get_sandbox_exec_args(security, box_dir, binary_path);
+        let (wrapper, args) = macos::get_sandbox_exec_args(security, box_dir, binary_path, volumes);
         Some(SpawnIsolation { wrapper, args })
     }
 
@@ -188,6 +192,7 @@ impl PlatformIsolation for UnsupportedPlatform {
         _security: &SecurityOptions,
         _box_dir: &Path,
         _binary_path: &Path,
+        _volumes: &[VolumeSpec],
     ) -> Option<SpawnIsolation> {
         None
     }

@@ -52,6 +52,9 @@ mod platform;
 #[cfg(target_os = "linux")]
 mod cgroup;
 
+// Seccomp module (cross-platform definitions, Linux-only implementation)
+pub mod seccomp;
+
 // Re-export bwrap utilities (Linux spawn integration)
 mod bwrap;
 #[cfg(target_os = "linux")]
@@ -97,10 +100,15 @@ use std::process::Command;
 /// let cmd = jailer.build_command(&binary, &args);  // Includes pre_exec hook
 /// cmd.spawn()?;
 /// ```
+/// Volume specification (re-exported for convenience).
+pub use crate::runtime::options::VolumeSpec;
+
 #[derive(Debug, Clone)]
 pub struct Jailer {
     /// Security configuration options
     security: SecurityOptions,
+    /// Volume mounts (for sandbox path restrictions)
+    volumes: Vec<VolumeSpec>,
     /// Unique box identifier
     box_id: String,
     /// Box directory path
@@ -116,6 +124,7 @@ impl Jailer {
     pub fn new(box_id: impl Into<String>, box_dir: impl Into<PathBuf>) -> Self {
         Self {
             security: SecurityOptions::default(),
+            volumes: Vec::new(),
             box_id: box_id.into(),
             box_dir: box_dir.into(),
         }
@@ -124,6 +133,15 @@ impl Jailer {
     /// Set security options (builder pattern).
     pub fn with_security(mut self, security: SecurityOptions) -> Self {
         self.security = security;
+        self
+    }
+
+    /// Set volume mounts (builder pattern).
+    ///
+    /// Volumes are used for sandbox path restrictions (macOS).
+    /// All volumes are added to readable paths; writable volumes are also added to writable paths.
+    pub fn with_volumes(mut self, volumes: Vec<VolumeSpec>) -> Self {
+        self.volumes = volumes;
         self
     }
 
@@ -271,8 +289,12 @@ impl Jailer {
     fn build_command_macos(&self, binary: &Path, args: &[String]) -> Command {
         let mut cmd = if platform::macos::is_sandbox_available() {
             tracing::info!("Building sandbox-exec isolated command");
-            let (sandbox_cmd, sandbox_args) =
-                platform::macos::get_sandbox_exec_args(&self.security, &self.box_dir, binary);
+            let (sandbox_cmd, sandbox_args) = platform::macos::get_sandbox_exec_args(
+                &self.security,
+                &self.box_dir,
+                binary,
+                &self.volumes,
+            );
             let mut cmd = Command::new(sandbox_cmd);
             cmd.args(sandbox_args);
             cmd.arg(binary);

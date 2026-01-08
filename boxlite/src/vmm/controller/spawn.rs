@@ -5,9 +5,9 @@ use std::{
     process::{Child, Stdio},
 };
 
-use crate::jailer::{Jailer, SecurityOptions};
+use crate::jailer::Jailer;
 use crate::runtime::layout::FilesystemLayout;
-use crate::runtime::options::VolumeSpec;
+use crate::runtime::options::BoxOptions;
 use crate::util::configure_library_env;
 use crate::vmm::VmmKind;
 use boxlite_shared::errors::{BoxliteError, BoxliteResult};
@@ -19,6 +19,9 @@ use libkrun_sys::krun_create_ctx;
 /// * `binary_path` - Path to the boxlite-shim binary
 /// * `engine_type` - Type of VM engine to use
 /// * `config_json` - Serialized BoxConfig
+/// * `home_dir` - BoxLite home directory
+/// * `box_id` - Unique box identifier
+/// * `options` - Box options (includes security and volumes)
 ///
 /// # Returns
 /// * `Ok(Child)` - Successfully spawned subprocess
@@ -29,7 +32,7 @@ pub(crate) fn spawn_subprocess(
     config_json: &str,
     home_dir: &Path,
     box_id: &str,
-    volumes: &[VolumeSpec],
+    options: &BoxOptions,
 ) -> BoxliteResult<Child> {
     // Build shim arguments
     let shim_args = vec![
@@ -44,13 +47,10 @@ pub(crate) fn spawn_subprocess(
     let layout = FilesystemLayout::new(home_dir.to_path_buf(), FsLayoutConfig::default());
     let box_dir = layout.boxes_dir().join(box_id);
 
-    // Create Jailer with security options
-    let security = SecurityOptions {
-        volumes: volumes.to_vec(),
-        ..Default::default()
-    };
-
-    let jailer = Jailer::new(box_id, &box_dir).with_security(security);
+    // Create Jailer with security options and volumes
+    let jailer = Jailer::new(box_id, &box_dir)
+        .with_security(options.security.clone())
+        .with_volumes(options.volumes.clone());
 
     // Setup pre-spawn isolation (cgroups on Linux, no-op on macOS)
     jailer.setup_pre_spawn()?;
