@@ -3,8 +3,11 @@
 //! subcommands, and flag definitions.
 
 use boxlite::{BoxCommand, BoxOptions, BoxliteOptions, BoxliteRuntime};
+use boxlite::{BoxOptions, BoxliteRuntime};
+use clap::{Args, Parser, Subcommand};
 use clap::{Args, Parser, Subcommand};
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
 /// Helper to parse CLI environment variables and apply them to BoxOptions
 pub fn apply_env_vars(env: &[String], opts: &mut BoxOptions) {
@@ -92,18 +95,37 @@ pub struct GlobalFlags {
     /// BoxLite home directory
     #[arg(long, global = true, env = "BOXLITE_HOME")]
     pub home: Option<std::path::PathBuf>,
+
+    /// Image registry to use (can be specified multiple times)
+    #[arg(long, global = true, value_name = "REGISTRY")]
+    pub registry: Vec<String>,
 }
 
 impl GlobalFlags {
     pub fn create_runtime(&self) -> anyhow::Result<BoxliteRuntime> {
-        let options = if let Some(home) = &self.home {
-            BoxliteOptions {
-                home_dir: home.clone(),
-                image_registries: vec![],
-            }
-        } else {
-            BoxliteOptions::default()
-        };
+        let home_dir = self.home.clone().unwrap_or_else(|| {
+            let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            path.push(".boxlite");
+            path
+        });
+
+        // Load configuration from file
+        let mut options = crate::config::load_config(&home_dir);
+
+        // Override/Extend with CLI flags
+        // Prioritize CLI registries if provided, effectively prepending them or overriding
+        // Currently, BoxLiteOptions has simple Vec<String>, so appending might be safer
+        // or replacing if the user intends to override.
+        // Let's prepend CLI registries to give them priority.
+        if !self.registry.is_empty() {
+            // Prepend CLI registries so they are tried first
+            options.image_registries = self
+                .registry
+                .iter()
+                .cloned()
+                .chain(options.image_registries)
+                .collect();
+        }
 
         BoxliteRuntime::new(options).map_err(Into::into)
     }
