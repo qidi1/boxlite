@@ -87,12 +87,14 @@ pub(crate) fn create_container_etc_files(
 }
 
 /// Create OCI bundle (config.json + rootfs reference)
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_oci_bundle(
     container_id: &str,
     rootfs: &Path,
     entrypoint: &[String],
     env: &[String],
     workdir: &Path,
+    user: &str,
     bundle_root: &Path,
     user_mounts: &[spec::UserMount],
 ) -> BoxliteResult<PathBuf> {
@@ -120,6 +122,7 @@ pub(crate) fn create_oci_bundle(
         workdir
             .to_str()
             .ok_or_else(|| BoxliteError::Internal("Invalid workdir path".to_string()))?,
+        user,
         &bundle_path,
         user_mounts,
     )?;
