@@ -3,11 +3,9 @@
 //! subcommands, and flag definitions.
 
 use boxlite::{BoxCommand, BoxOptions, BoxliteOptions, BoxliteRuntime};
-use boxlite::{BoxOptions, BoxliteRuntime};
-use clap::{Args, Parser, Subcommand};
 use clap::{Args, Parser, Subcommand};
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::Path;
 
 /// Helper to parse CLI environment variables and apply them to BoxOptions
 pub fn apply_env_vars(env: &[String], opts: &mut BoxOptions) {
@@ -99,26 +97,31 @@ pub struct GlobalFlags {
     /// Image registry to use (can be specified multiple times)
     #[arg(long, global = true, value_name = "REGISTRY")]
     pub registry: Vec<String>,
+
+    /// Configuration file path (optional)
+    ///
+    /// Specifies the JSON configuration file containing BoxLite options such as image_registries.
+    /// If not provided, uses default options (no config file is loaded from $BOXLITE_HOME).
+    #[arg(long, global = true)]
+    pub config: Option<String>,
 }
 
 impl GlobalFlags {
     pub fn create_runtime(&self) -> anyhow::Result<BoxliteRuntime> {
-        let home_dir = self.home.clone().unwrap_or_else(|| {
-            let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-            path.push(".boxlite");
-            path
-        });
+        // Load config file if provided, otherwise use default options
+        let mut options = if let Some(config_path) = &self.config {
+            crate::config::load_config(Path::new(config_path))?
+        } else {
+            BoxliteOptions::default()
+        };
 
-        // Load configuration from file
-        let mut options = crate::config::load_config(&home_dir);
+        // CLI --home override home_dir
+        if let Some(cli_home) = &self.home {
+            options.home_dir = cli_home.clone();
+        }
 
-        // Override/Extend with CLI flags
-        // Prioritize CLI registries if provided, effectively prepending them or overriding
-        // Currently, BoxLiteOptions has simple Vec<String>, so appending might be safer
-        // or replacing if the user intends to override.
-        // Let's prepend CLI registries to give them priority.
+        // CLI --registry prepends to image_registries (highest priority)
         if !self.registry.is_empty() {
-            // Prepend CLI registries so they are tried first
             options.image_registries = self
                 .registry
                 .iter()
@@ -289,5 +292,18 @@ mod tests {
         );
 
         assert!(!opts.env.iter().any(|(k, _)| k == "NON_EXISTENT_VAR"));
+    }
+
+    #[test]
+    fn test_resource_flags_cpu_cap() {
+        let flags = ResourceFlags {
+            cpus: Some(1000),
+            memory: None,
+        };
+
+        let mut opts = BoxOptions::default();
+        flags.apply_to(&mut opts);
+
+        assert_eq!(opts.cpus, Some(255));
     }
 }

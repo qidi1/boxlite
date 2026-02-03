@@ -14,17 +14,16 @@ You can provide a list of custom registries. BoxLite will try to pull the image 
 
 ## CLI Configuration
 
-The CLI layers configuration sources with the following priority:
+The CLI layers configuration sources with the following priority (from lowest to highest):
 
-1.  **CLI Flags (`--registry`)**: Highest priority. These are **prepended** to any registries found in the config file.
-2.  **Configuration File (`~/.boxlite/config.json`)**: Persistent global configuration.
-3.  **Default**: `docker.io`.
+1.  **Default**: `docker.io`
+2.  **Configuration File (`--config`)**: Loads configuration from the specified path
+3.  **CLI Flags (`--registry`)**: Prepended to registries from config file (highest priority)
 
-### 1. Global Configuration File
+### 1. Configuration File
 
-For registries that you use frequently, you can define them in a global configuration file located at `~/.boxlite/config.json`.
+Create a JSON configuration file with your registry preferences:
 
-**`~/.boxlite/config.json`:**
 ```json
 {
   "image_registries": [
@@ -35,9 +34,20 @@ For registries that you use frequently, you can define them in a global configur
 }
 ```
 
-With this configuration, any `boxlite` CLI command will try to find images in `ghcr.io`, then `quay.io`, and finally `docker.io`.
+- `image_registries` (optional): List of registries to search for unqualified image references.
 
-### 2. Command Line Flags
+### 2. Using the Configuration File
+
+Use the `--config` flag to specify your configuration file:
+
+```bash
+# Use a project-specific configuration
+boxlite --config ./project-config.json run alpine
+```
+
+**Important**: If you specify a config file with `--config` and the file does not exist or is invalid, the command will fail with an error.
+
+### 3. Command Line Flags
 
 You can use the global `--registry` flag with `boxlite run` or `boxlite create`. You can specify it multiple times.
 
@@ -50,14 +60,14 @@ These flags are **prepended** to your configured list. This allows you to force 
 # 1. my.private.registry.com (from flag)
 # 2. ghcr.io (from config)
 # 3. docker.io (from config)
-boxlite run \
-  --registry my.private.registry.com \
+boxlite --config ./config.json \
+  run --registry my.private.registry.com \
   my-internal-app:latest
 ```
 
 ## SDK Configuration
 
-The SDKs are "pure" by design. They **do not** automatically load the global configuration file (`config.json`). This ensures that your code's behavior is deterministic and doesn't silently depend on the user's local environment.
+The SDKs are "pure" by design. They **do not** automatically load any configuration file. This ensures that your code's behavior is deterministic and doesn't silently depend on the user's local environment.
 
 1.  **Programmatic Options**: You explicitly pass the list of registries when initializing the runtime.
 2.  **Default**: `docker.io` (if you pass an empty list or nothing).
@@ -105,33 +115,22 @@ await box.exec('echo', 'Hello!');
 
 ### Advanced: Loading Config in SDKs
 
-If you want your Python script to respect the user's `~/.boxlite/config.json`, you can manually load it. This puts the control in your hands.
+If you want your SDK application to respect a configuration file, you can manually load it. This puts the control in your hands.
 
 ```python
 import boxlite
 import json
-import os
 from pathlib import Path
 
-def load_boxlite_options():
-    # 1. Start with defaults
-    registries = []
-    
-    # 2. Try to load config.json
-    home = os.environ.get("BOXLITE_HOME", os.path.expanduser("~/.boxlite"))
-    config_path = Path(home) / "config.json"
-    
-    if config_path.exists():
-        try:
-            with open(config_path) as f:
-                config = json.load(f)
-                registries = config.get("image_registries", [])
-        except Exception as e:
-            print(f"Warning: Failed to load config: {e}")
-            
-    # 3. Create options
-    return boxlite.Options(image_registries=registries)
+def load_boxlite_options(config_path: str):
+    """Load BoxLite options from a configuration file."""
+    with open(config_path) as f:
+        config = json.load(f)
+
+    return boxlite.Options(
+        image_registries=config.get("image_registries", [])
+    )
 
 # Use it
-runtime = boxlite.Boxlite(load_boxlite_options())
+runtime = boxlite.Boxlite(load_boxlite_options("./config.json"))
 ```
