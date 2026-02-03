@@ -500,8 +500,9 @@ impl SecurityOptionsBuilder {
 /// Configuration options for BoxliteRuntime.
 ///
 /// Users can create it with defaults and modify fields as needed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BoxliteOptions {
+    #[serde(default = "default_home_dir")]
     pub home_dir: PathBuf,
     /// Registries to search for unqualified image references.
     ///
@@ -524,21 +525,24 @@ pub struct BoxliteOptions {
     /// }
     /// // "alpine" → tries ghcr.io/myorg/alpine, then docker.io/alpine
     /// ```
+    #[serde(default)]
     pub image_registries: Vec<String>,
+}
+
+fn default_home_dir() -> PathBuf {
+    std::env::var(const_envs::BOXLITE_HOME)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let mut path = home_dir().unwrap_or_else(|| PathBuf::from("."));
+            path.push(const_dirs::BOXLITE_DIR);
+            path
+        })
 }
 
 impl Default for BoxliteOptions {
     fn default() -> Self {
-        let home_dir = std::env::var(const_envs::BOXLITE_HOME)
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                let mut path = home_dir().unwrap_or_else(|| PathBuf::from("."));
-                path.push(const_dirs::BOXLITE_DIR);
-                path
-            });
-
         Self {
-            home_dir,
+            home_dir: default_home_dir(),
             image_registries: Vec::new(),
         }
     }
