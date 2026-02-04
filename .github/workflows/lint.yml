@@ -7,10 +7,12 @@ on:
       - '**/*.rs'
       - '**/*.py'
       - '**/*.ts'
+      - '**/*.go'
       - '**/Cargo.toml'
       - 'Cargo.lock'
       - 'sdks/python/**'
       - 'sdks/node/**'
+      - 'sdks/go/**'
       - '.github/workflows/lint.yml'
       - '.github/workflows/config.yml'
   pull_request:
@@ -19,10 +21,12 @@ on:
       - '**/*.rs'
       - '**/*.py'
       - '**/*.ts'
+      - '**/*.go'
       - '**/Cargo.toml'
       - 'Cargo.lock'
       - 'sdks/python/**'
       - 'sdks/node/**'
+      - 'sdks/go/**'
       - '.github/workflows/lint.yml'
       - '.github/workflows/config.yml'
 
@@ -40,6 +44,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       python: ${{ steps.filter.outputs.python }}
       node: ${{ steps.filter.outputs.node }}
+      go: ${{ steps.filter.outputs.go }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
@@ -54,6 +59,9 @@ jobs:
               - 'sdks/python/**/*.py'
             node:
               - 'sdks/node/**/*.ts'
+            go:
+              - 'sdks/go/**/*.go'
+              - 'sdks/go/go.mod'
 
   rustfmt:
     name: Check Rust formatting
@@ -160,3 +168,23 @@ jobs:
       - name: Type check
         working-directory: sdks/node
         run: npx tsc --noEmit
+
+  go:
+    name: Go Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.go == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: sdks/go
+          args: --timeout=5m
