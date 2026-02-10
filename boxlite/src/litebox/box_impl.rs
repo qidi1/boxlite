@@ -329,7 +329,13 @@ impl BoxImpl {
         // Update state
         {
             let mut state = self.state.write();
-            state.set_status(BoxStatus::Stopped);
+
+            // Only transition to Stopped if we were Running (or other active state).
+            // If we were Configured (never started), stay Configured so next start()
+            // triggers full initialization (creating disks).
+            if state.status != BoxStatus::Configured {
+                state.set_status(BoxStatus::Stopped);
+            }
             state.set_pid(None);
 
             if was_persisted {

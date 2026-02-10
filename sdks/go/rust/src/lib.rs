@@ -1,71 +1,87 @@
 // BoxLite Go SDK - Rust Bridge Layer
 //
 // This library serves as the underlying core for the Go SDK.
-// It maintains a global Tokio Runtime on the Rust side and exposes C ABI to Go (CGO).
+// It maintains a global Runtime on the Rust side and exposes C ABI to Go (CGO).
+// NOW REFACTORED to use shared `boxlite-ffi`.
 
-use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
-use std::ptr;
+use boxlite_ffi::{
+    error::{BoxliteErrorCode, FFIError},
+    ops,
+    runtime::{BoxHandle, RuntimeHandle},
+};
+use std::ffi::c_char;
 use std::sync::OnceLock;
-use tokio::runtime::Runtime;
 
-use boxlite::{BoxOptions, BoxliteRuntime, LiteBox};
+// Global Runtime Holder
+// We store usize to make it Sync (raw pointers are not Sync)
+static GLOBAL_RUNTIME: OnceLock<usize> = OnceLock::new();
+// Store initialization error message to report on subsequent failures
+static GLOBAL_INIT_ERROR: OnceLock<String> = OnceLock::new();
 
-// Global Tokio Runtime
-static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+unsafe fn get_runtime(out_err: *mut *mut c_char) -> *mut RuntimeHandle {
+    let ptr_val = *GLOBAL_RUNTIME.get_or_init(|| {
+        let mut handle: *mut RuntimeHandle = std::ptr::null_mut();
+        let mut error = FFIError::default();
+        
+        let code = ops::create_runtime_impl(
+            std::ptr::null(), // home_dir
+            std::ptr::null(), // registries_json
+            &mut handle,
+            &mut error,
+        );
 
-/// Gets a reference to the global Runtime.
-fn get_runtime() -> &'static Runtime {
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create BoxLite Tokio runtime")
-    })
-}
-
-/// Internal helper: blocks on a future using the global Runtime.
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    get_runtime().block_on(future)
-}
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-/// Allocates a C string from a Rust string. Caller must free with boxlite_go_free_string.
-fn alloc_c_string(s: &str) -> *mut c_char {
-    match CString::new(s) {
-        Ok(cs) => cs.into_raw(),
-        Err(_) => ptr::null_mut(),
-    }
-}
-
-/// Sets the error output parameter and returns error code.
-fn set_error(out_err: *mut *mut c_char, msg: &str) -> i32 {
-    if !out_err.is_null() {
-        unsafe {
-            *out_err = alloc_c_string(msg);
+        if code != BoxliteErrorCode::Ok {
+            // Capture the error message
+            let msg = if !error.message.is_null() {
+                boxlite_ffi::c_str_to_string(error.message).unwrap_or_else(|_| "Unknown initialization error".to_string())
+            } else {
+                "Unknown initialization error".to_string()
+            };
+            let _ = GLOBAL_INIT_ERROR.set(msg);
+            
+            // Free error resource
+            ops::error_free_impl(&mut error);
+            0
+        } else {
+            handle as usize
         }
+    });
+
+    if ptr_val == 0 {
+        // Runtime is not available, return error if requested
+        if !out_err.is_null() {
+            let err_msg = GLOBAL_INIT_ERROR.get()
+                .map(|s| s.as_str())
+                .unwrap_or("Runtime failed to initialize");
+            
+            let c_msg = std::ffi::CString::new(err_msg).unwrap();
+            *out_err = c_msg.into_raw();
+        }
+        std::ptr::null_mut()
+    } else {
+        ptr_val as *mut RuntimeHandle
     }
-    -1
 }
 
-/// Parses a C string to Rust &str.
-fn parse_c_str<'a>(ptr: *const c_char) -> Option<&'a str> {
-    if ptr.is_null() {
-        return None;
+// Helper to propagate FFIError to C-style out_err (**char)
+unsafe fn propagate_error(mut error: FFIError, out_err: *mut *mut c_char) {
+    if !out_err.is_null() {
+        *out_err = error.message;
+    } else {
+        // If caller didn't provide out_err, we must free the message to prevent leak
+        ops::error_free_impl(&mut error);
     }
-    unsafe { CStr::from_ptr(ptr).to_str().ok() }
 }
 
-// ============================================================================
-// BOX HANDLE (Opaque pointer for Go)
-// ============================================================================
-
-/// Opaque handle to a LiteBox, held by Go.
-pub struct BoxHandle {
-    inner: LiteBox,
+// Macro to ensure runtime is available
+macro_rules! ensure_runtime {
+    ($out_err:expr, $err_ret:expr) => {{
+        let rt = get_runtime($out_err);
+        if rt.is_null() {
+            return $err_ret;
+        }
+        rt
+    }};
 }
 
 // ============================================================================
@@ -80,281 +96,170 @@ pub extern "C" fn boxlite_go_ping() -> i32 {
 }
 
 /// Free a C string allocated by Rust.
-///
-/// # Safety
-///
-/// The provided pointer must be null or a valid pointer to a C string allocated by
-/// `alloc_c_string` (via `CString::into_raw`). This function takes ownership of
-/// the string and frees its memory.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_free_string(s: *mut c_char) {
-    if !s.is_null() {
-        // SAFETY: The caller must ensure 's' was allocated by CString::into_raw.
-        drop(CString::from_raw(s));
-    }
+    ops::string_free_impl(s);
 }
 
-/// Create a new box with the given options (JSON).
+// Create a new box with the given options (JSON).
 /// Returns box ID (caller must free) on success, NULL on failure.
-/// out_err receives error message on failure (caller must free).
-///
-/// # Safety
-///
-/// * `opts_json` must be a null-terminated C string representing valid JSON.
-/// * `name` must be null or a null-terminated C string.
-/// * `out_err` must be a valid pointer to a `*mut c_char` or null.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_create_box(
     opts_json: *const c_char,
     name: *const c_char,
     out_err: *mut *mut c_char,
 ) -> *mut c_char {
-    // Parse options JSON
-    let opts_str = match parse_c_str(opts_json) {
-        Some(s) => s,
-        None => {
-            set_error(out_err, "Invalid options JSON pointer");
-            return ptr::null_mut();
-        }
-    };
+    let runtime = ensure_runtime!(out_err, std::ptr::null_mut());
 
-    let opts: BoxOptions = match serde_json::from_str(opts_str) {
-        Ok(o) => o,
-        Err(e) => {
-            set_error(out_err, &format!("Failed to parse options: {}", e));
-            return ptr::null_mut();
-        }
-    };
+    let mut handle: *mut BoxHandle = std::ptr::null_mut();
+    let mut error = FFIError::default();
 
-    // Parse optional name
-    let name_opt = parse_c_str(name).map(|s| s.to_string());
+    let code = ops::create_box_impl(runtime, opts_json, name, &mut handle, &mut error);
 
-    // Get default runtime and create box
-    let runtime = BoxliteRuntime::default_runtime();
-    let result = block_on(runtime.create(opts, name_opt));
-
-    match result {
-        Ok(lite_box) => {
-            let id = lite_box.id().to_string();
-            alloc_c_string(&id)
-        }
-        Err(e) => {
-            set_error(out_err, &e.to_string());
-            ptr::null_mut()
-        }
+    if code == BoxliteErrorCode::Ok {
+        let id_str = ops::box_id_impl(handle);
+        // We only return the ID, so we free the handle immediately
+        ops::box_free_impl(handle);
+        id_str
+    } else {
+        propagate_error(error, out_err);
+        std::ptr::null_mut()
     }
 }
 
 /// Get a box handle by ID or name.
 /// Returns BoxHandle pointer on success, NULL if not found or on error.
-/// out_err receives error message on failure (caller must free).
-///
-/// # Safety
-///
-/// * `id_or_name` must be a null-terminated C string.
-/// * `out_err` must be a valid pointer to a `*mut c_char` or null.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_get_box(
     id_or_name: *const c_char,
     out_err: *mut *mut c_char,
 ) -> *mut BoxHandle {
-    let id_str = match parse_c_str(id_or_name) {
-        Some(s) => s,
-        None => {
-            set_error(out_err, "Invalid id_or_name pointer");
-            return ptr::null_mut();
-        }
-    };
+    let runtime = ensure_runtime!(out_err, std::ptr::null_mut());
 
-    let runtime = BoxliteRuntime::default_runtime();
-    let result = block_on(runtime.get(id_str));
+    let mut handle: *mut BoxHandle = std::ptr::null_mut();
+    let mut error = FFIError::default();
 
-    match result {
-        Ok(Some(lite_box)) => Box::into_raw(Box::new(BoxHandle { inner: lite_box })),
-        Ok(None) => ptr::null_mut(), // Not found, not an error
-        Err(e) => {
-            set_error(out_err, &e.to_string());
-            ptr::null_mut()
-        }
+    let code = ops::get_box_impl(runtime, id_or_name, &mut handle, &mut error);
+
+    if code == BoxliteErrorCode::Ok {
+        handle
+    } else if code == BoxliteErrorCode::NotFound {
+        // Original behavior: return NULL, but NO error message for NotFound
+        ops::error_free_impl(&mut error);
+        std::ptr::null_mut()
+    } else {
+        propagate_error(error, out_err);
+        std::ptr::null_mut()
     }
 }
 
 /// List all boxes as JSON array.
-/// out_json receives the JSON string (caller must free).
 /// Returns 0 on success, -1 on error.
-///
-/// # Safety
-///
-/// * `out_json` must be a valid pointer to a `*mut c_char`.
-/// * `out_err` must be a valid pointer to a `*mut c_char` or null.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_list_boxes(
     out_json: *mut *mut c_char,
     out_err: *mut *mut c_char,
 ) -> i32 {
-    if out_json.is_null() {
-        return set_error(out_err, "out_json is null");
-    }
+    let runtime = ensure_runtime!(out_err, -1);
 
-    let runtime = BoxliteRuntime::default_runtime();
-    let result = block_on(runtime.list_info());
+    let mut error = FFIError::default();
+    let code = ops::list_boxes_impl(runtime, out_json, &mut error);
 
-    match result {
-        Ok(infos) => {
-            let json = match serde_json::to_string(&infos) {
-                Ok(j) => j,
-                Err(e) => {
-                    return set_error(out_err, &format!("Failed to serialize: {}", e));
-                }
-            };
-            *out_json = alloc_c_string(&json);
-            0
-        }
-        Err(e) => set_error(out_err, &e.to_string()),
+    if code == BoxliteErrorCode::Ok {
+        0
+    } else {
+        propagate_error(error, out_err);
+        -1
     }
 }
 
 /// Remove a box by ID or name.
 /// Returns 0 on success, -1 on error.
-///
-/// # Safety
-///
-/// * `id_or_name` must be a null-terminated C string.
-/// * `out_err` must be a valid pointer to a `*mut c_char` or null.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_remove_box(
     id_or_name: *const c_char,
     force: bool,
     out_err: *mut *mut c_char,
 ) -> i32 {
-    let id_str = match parse_c_str(id_or_name) {
-        Some(s) => s,
-        None => {
-            return set_error(out_err, "Invalid id_or_name pointer");
-        }
-    };
+    let runtime = ensure_runtime!(out_err, -1);
 
-    let runtime = BoxliteRuntime::default_runtime();
-    let result = block_on(runtime.remove(id_str, force));
+    let mut error = FFIError::default();
+    let code = ops::remove_impl(runtime, id_or_name, force, &mut error);
 
-    match result {
-        Ok(_) => 0,
-        Err(e) => set_error(out_err, &e.to_string()),
+    if code == BoxliteErrorCode::Ok {
+        0
+    } else {
+        propagate_error(error, out_err);
+        -1
     }
 }
 
-// ============================================================================
-// BOX OPERATIONS
-// ============================================================================
-
 /// Start a box.
 /// Returns 0 on success, -1 on error.
-///
-/// # Safety
-///
-/// * `handle` must be a valid pointer to a `BoxHandle`.
-/// * `out_err` must be a valid pointer to a `*mut c_char` or null.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_box_start(
     handle: *mut BoxHandle,
     out_err: *mut *mut c_char,
 ) -> i32 {
-    if handle.is_null() {
-        return set_error(out_err, "handle is null");
-    }
+    let mut error = FFIError::default();
+    // Corrected function name: start_box_impl (was box_start_impl)
+    let code = ops::start_box_impl(handle, &mut error);
 
-    let handle = &*handle;
-    let result = block_on(handle.inner.start());
-
-    match result {
-        Ok(_) => 0,
-        Err(e) => set_error(out_err, &e.to_string()),
+    if code == BoxliteErrorCode::Ok {
+        0
+    } else {
+        propagate_error(error, out_err);
+        -1
     }
 }
 
 /// Stop a box.
 /// Returns 0 on success, -1 on error.
-///
-/// # Safety
-///
-/// * `handle` must be a valid pointer to a `BoxHandle`.
-/// * `out_err` must be a valid pointer to a `*mut c_char` or null.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_box_stop(
     handle: *mut BoxHandle,
     out_err: *mut *mut c_char,
 ) -> i32 {
-    if handle.is_null() {
-        return set_error(out_err, "handle is null");
-    }
+    let mut error = FFIError::default();
+    // Corrected function name: stop_box_impl (was box_stop_impl)
+    let code = ops::stop_box_impl(handle, &mut error);
 
-    let handle = &*handle;
-    let result = block_on(handle.inner.stop());
-
-    match result {
-        Ok(_) => 0,
-        Err(e) => set_error(out_err, &e.to_string()),
+    if code == BoxliteErrorCode::Ok {
+        0
+    } else {
+        propagate_error(error, out_err);
+        -1
     }
 }
 
 /// Get box info as JSON.
-/// out_json receives the JSON string (caller must free).
 /// Returns 0 on success, -1 on error.
-///
-/// # Safety
-///
-/// * `handle` must be a valid pointer to a `BoxHandle`.
-/// * `out_json` must be a valid pointer to a `*mut c_char`.
-/// * `out_err` must be a valid pointer to a `*mut c_char` or null.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_box_info(
     handle: *mut BoxHandle,
     out_json: *mut *mut c_char,
     out_err: *mut *mut c_char,
 ) -> i32 {
-    if handle.is_null() {
-        return set_error(out_err, "handle is null");
-    }
-    if out_json.is_null() {
-        return set_error(out_err, "out_json is null");
-    }
+    let mut error = FFIError::default();
+    let code = ops::box_info_impl(handle, out_json, &mut error);
 
-    let handle = &*handle;
-    let info = handle.inner.info();
-
-    let json = match serde_json::to_string(&info) {
-        Ok(j) => j,
-        Err(e) => {
-            return set_error(out_err, &format!("Failed to serialize: {}", e));
-        }
-    };
-    *out_json = alloc_c_string(&json);
-    0
+    if code == BoxliteErrorCode::Ok {
+        0
+    } else {
+        propagate_error(error, out_err);
+        -1
+    }
 }
 
 /// Get box ID as string (caller must free).
-///
-/// # Safety
-///
-/// * `handle` must be a valid pointer to a `BoxHandle`.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_box_id(handle: *mut BoxHandle) -> *mut c_char {
-    if handle.is_null() {
-        return ptr::null_mut();
-    }
-    let handle = &*handle;
-    alloc_c_string(handle.inner.id().as_ref())
+    ops::box_id_impl(handle)
 }
 
 /// Free a box handle.
-///
-/// # Safety
-///
-/// * `handle` must be a valid pointer to a `BoxHandle` allocated by `boxlite_go_get_box`
-///   (via `Box::into_raw`). This function takes ownership and frees the memory.
 #[no_mangle]
 pub unsafe extern "C" fn boxlite_go_box_free(handle: *mut BoxHandle) {
-    if !handle.is_null() {
-        drop(Box::from_raw(handle));
-    }
+    // Now uses correct implementation
+    ops::box_free_impl(handle);
 }

@@ -19,13 +19,24 @@ func NewClient() (*Client, error) {
 }
 
 // CreateBox creates a new box with the given options.
-func (c *Client) CreateBox(ctx context.Context, opts BoxOptions, name string) (*Box, error) {
+func (c *Client) CreateBox(ctx context.Context, name string, opts ...Option) (*Box, error) {
+	// Default options
+	boxOpts := &BoxOptions{
+		// Default values can be set here if needed, though usually handled by core/binding defaults.
+		// For example, if Image is required but not provided, we might error out or let binding handle it.
+	}
+
+	// Apply functional options
+	for _, opt := range opts {
+		opt(boxOpts)
+	}
+
 	bindingOpts := binding.BoxOptions{
-		Image:      opts.Image,
-		CPUs:       opts.CPUs,
-		MemoryMB:   opts.MemoryMB,
-		Env:        opts.Env,
-		WorkingDir: opts.WorkingDir,
+		Image:      boxOpts.Image,
+		CPUs:       boxOpts.CPUs,
+		MemoryMB:   boxOpts.MemoryMB,
+		Env:        boxOpts.Env,
+		WorkingDir: boxOpts.WorkingDir,
 	}
 
 	id, err := binding.CreateBox(bindingOpts, name)
@@ -37,6 +48,9 @@ func (c *Client) CreateBox(ctx context.Context, opts BoxOptions, name string) (*
 	handle, _, err := binding.GetBox(id)
 	if err != nil {
 		return nil, err
+	}
+	if handle == nil {
+		return nil, ErrBoxCreatedButNotFound
 	}
 
 	return &Box{

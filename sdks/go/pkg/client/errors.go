@@ -9,4 +9,7 @@ var (
 
 	// ErrBoxNotFound is returned when a box with the given ID or name is not found.
 	ErrBoxNotFound = errors.New("boxlite: box not found")
+
+	// ErrBoxCreatedButNotFound is returned when a box was created but could not be retrieved immediately after.
+	ErrBoxCreatedButNotFound = errors.New("boxlite: box created but not found")
 )

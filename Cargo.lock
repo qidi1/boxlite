@@ -362,11 +362,8 @@ dependencies = [
 name = "boxlite-c"
 version = "0.5.8"
 dependencies = [
- "boxlite",
+ "boxlite-ffi",
  "cbindgen",
- "futures",
- "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -394,19 +391,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "boxlite-ffi"
+version = "0.5.8"
+dependencies = [
+ "boxlite",
+ "futures",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "boxlite-go-bridge"
 version = "0.1.0"
 dependencies = [
- "boxlite",
- "boxlite-shared",
+ "boxlite-ffi",
  "libc",
- "once_cell",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
