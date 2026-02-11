@@ -365,11 +365,8 @@ dependencies = [
 name = "boxlite-c"
 version = "0.5.10"
 dependencies = [
- "boxlite",
+ "boxlite-ffi",
  "cbindgen",
- "futures",
- "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -400,6 +397,17 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ulid",
+]
+
+[[package]]
+name = "boxlite-ffi"
+version = "0.5.10"
+dependencies = [
+ "boxlite",
+ "futures",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

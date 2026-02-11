@@ -550,6 +550,7 @@ impl Default for BoxliteOptions {
 
 /// Options used when constructing a box.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct BoxOptions {
     pub cpus: Option<u8>,
     pub memory_mib: Option<u32>,

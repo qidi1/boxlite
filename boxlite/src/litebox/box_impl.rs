@@ -329,8 +329,13 @@ impl BoxImpl {
         // Update state
         {
             let mut state = self.state.write();
-            state.set_status(BoxStatus::Stopped);
-            state.set_pid(None);
+
+            // Only transition to Stopped if we were Running (or other active state).
+            // If we were Configured (never started), stay Configured so next start()
+            // triggers full initialization (creating disks).
+            if !state.status.is_configured() {
+                state.mark_stop();
+            }
 
             if was_persisted {
                 // Box was persisted - sync to DB

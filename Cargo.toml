@@ -7,6 +7,7 @@ members = [
     "boxlite/deps/libkrun-sys",
     "boxlite-shared",
     "guest",
+    "sdks/boxlite-ffi",
     "sdks/c",
     "sdks/python",
     "sdks/node",
